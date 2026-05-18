@@ -4,19 +4,17 @@ from app.supabase_client import supabase
 from stl import mesh
 import tempfile
 import uuid
+import os
 
 router = APIRouter()
 
 
 @router.post("/generate")
 def generate_prosthesis(data: ProsthesisForm):
-
     generated_id = str(uuid.uuid4())
 
-    # 1. Descargar STL default
-    file_bytes = supabase.storage.from_("base-models").download(
-        "default.stl"
-    )
+    # 1. Descargar STL default desde Supabase
+    file_bytes = supabase.storage.from_("base-models").download("default.stl")
 
     # 2. Guardar STL temporalmente
     with tempfile.NamedTemporaryFile(delete=False, suffix=".stl") as input_file:
@@ -27,11 +25,17 @@ def generate_prosthesis(data: ProsthesisForm):
     prosthesis_mesh = mesh.Mesh.from_file(input_path)
 
     # 4. Escalar STL según largo del muñón
-    target_length_mm = data.stump_length_cm * 10
+    target_length_mm = float(data.stump_length_cm * 10)
 
-    current_length_mm = (
+    current_length_mm = float(
         prosthesis_mesh.z.max() - prosthesis_mesh.z.min()
     )
+
+    if current_length_mm == 0:
+        return {
+            "success": False,
+            "message": "El STL base tiene largo 0, no se puede escalar."
+        }
 
     scale_factor = target_length_mm / current_length_mm
 
@@ -43,11 +47,10 @@ def generate_prosthesis(data: ProsthesisForm):
 
     prosthesis_mesh.save(output_path)
 
-    # 6. Subir STL generado
+    # 6. Subir STL generado a Supabase
     generated_path = f"{generated_id}.stl"
 
     with open(output_path, "rb") as f:
-
         supabase.storage.from_("generated-models").upload(
             generated_path,
             f,
@@ -57,10 +60,14 @@ def generate_prosthesis(data: ProsthesisForm):
             }
         )
 
+    # 7. Borrar archivos temporales
+    os.remove(input_path)
+    os.remove(output_path)
+
     return {
         "success": True,
         "message": "STL generado correctamente",
         "dog_name": data.dog_name,
-        "scale_factor": scale_factor,
+        "scale_factor": float(scale_factor),
         "generated_path": generated_path
     }
