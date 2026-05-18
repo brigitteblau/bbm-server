@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+supabase
+python-dotenv
+numpy
+numpy-stl
+python-multipart
