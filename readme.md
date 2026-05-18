@@ -1,4 +1,7 @@
-
+#todo
+- cambiar el nombnre del archivo
+- fijarse que esta modifincando 
+- 
 python -m venv venv
 venv\Scripts\activate 
 pip install -r requirements.txt
