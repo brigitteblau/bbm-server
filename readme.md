@@ -1,4 +1,10 @@
 #todo
+
+- lo real importanto es PONER EL .ENV en render
+  https://dashboard.render.com/web/srv-d8arafr7uimc73andfv0/deploys/dep-d8arag37uimc73andg6g
+  
+- importante tamb es probar todo el flujo con maite
+  
 - cambiar el nombnre del archivo
 - fijarse que esta modifincando 
 - 
