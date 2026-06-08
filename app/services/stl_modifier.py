@@ -1,6 +1,8 @@
 from pathlib import Path
-from uuid import uuid4
 from io import BytesIO
+import re
+import unicodedata
+from uuid import uuid4
 
 import trimesh
 
@@ -13,36 +15,29 @@ MM_PER_CM = 10.0
 def generate_scaled_stl(
     data: ProsthesisForm,
     base_stl_path: str | Path,
-    output_dir: str | Path,
+    output_dir: str | Path | None = None,
 ) -> dict[str, object]:
     """Generate a simple scaled STL from one base mesh and request measurements."""
     base_path = Path(base_stl_path)
     if not base_path.exists():
         raise FileNotFoundError(f"Base STL not found: {base_path}")
 
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     mesh = trimesh.load_mesh(base_path, file_type="stl")
-    return _scale_and_export_mesh(data, mesh, out_dir)
+    return _scale_and_export_mesh(data, mesh)
 
 
 def generate_scaled_stl_from_bytes(
     data: ProsthesisForm,
     base_stl_bytes: bytes,
-    output_dir: str | Path,
+    output_dir: str | Path | None = None,
 ) -> dict[str, object]:
-    out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-
     mesh = trimesh.load_mesh(BytesIO(base_stl_bytes), file_type="stl")
-    return _scale_and_export_mesh(data, mesh, out_dir)
+    return _scale_and_export_mesh(data, mesh)
 
 
 def _scale_and_export_mesh(
     data: ProsthesisForm,
     mesh: trimesh.Trimesh,
-    output_dir: Path,
 ) -> dict[str, object]:
     if mesh.is_empty:
         raise ValueError("Base STL is empty.")
@@ -72,12 +67,13 @@ def _scale_and_export_mesh(
 
     mesh.apply_scale([scale_x, scale_y, scale_z])
 
-    generated_filename = f"{uuid4()}.stl"
-    output_path = output_dir / generated_filename
-    mesh.export(output_path)
+    generated_filename = f"{_safe_filename_part(data.dog_name)}-{uuid4()}.stl"
+    stl_buffer = BytesIO()
+    mesh.export(file_obj=stl_buffer, file_type="stl")
 
     return {
-        "generated_stl_path": str(output_path),
+        "generated_filename": generated_filename,
+        "generated_stl_bytes": stl_buffer.getvalue(),
         "generation_parameters": {
             "scale_x": scale_x,
             "scale_y": scale_y,
@@ -97,3 +93,11 @@ def _scale_and_export_mesh(
 def _circumference_cm_to_diameter_mm(circumference_cm: float) -> float:
     circumference_mm = float(circumference_cm * MM_PER_CM)
     return circumference_mm / 3.141592653589793
+
+
+def _safe_filename_part(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value.strip())
+    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
+    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", ascii_value.lower())
+    cleaned = cleaned.strip("-_")
+    return cleaned or "perro"

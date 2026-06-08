@@ -16,4 +16,6 @@ class ProsthesisForm(BaseModel):
     proximal_circumference_cm: float
     distal_circumference_cm: float
     base_stl_path: str | None = None
+    base_model_name: str | None = None
     base_model_storage_path: str | None = None
+
