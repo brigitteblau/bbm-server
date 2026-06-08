@@ -7,7 +7,6 @@ pip install -r requirements.txt
  uvicorn app.main:app --reload
 correrlo con tu propio wifi si podes :=
 {
-  "user_id": "test-user",
   "dog_name": "Toby",
   "dog_weight_kg": 18,
   "dog_breed": "mestizo",
@@ -44,22 +43,12 @@ Columnas esperadas en generated_models:
 
 - id uuid primary key default gen_random_uuid()
 - created_at timestamptz default now()
-- user_id text
-- dog_name text
-- dog_weight_kg numeric
-- dog_breed text
-- dog_size text
-- limb_position text
-- limb_side text
-- stump_length_cm numeric
-- proximal_circumference_cm numeric
-- distal_circumference_cm numeric
-- base_model_name text
-- base_model_storage_path text
-- base_source text
-- generated_filename text
-- storage_bucket text
-- storage_path text
+- user_id uuid null references profiles(id)
+- request_id uuid null references prosthesis_requests(id)
+- base_model_id uuid null references base_models(id)
+- generated_stl_path text
+- preview_image_path text
 - algorithm_version text
 - generation_parameters jsonb
+- status text default 'generated'
 

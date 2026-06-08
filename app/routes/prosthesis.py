@@ -40,30 +40,23 @@ def _create_generated_model_signed_url(storage_path: str) -> str:
 
 def _insert_generated_model_record(
     data: ProsthesisForm,
-    base_source: str,
     generated_storage_path: str,
     result: dict[str, object],
 ) -> dict[str, object] | None:
     record = {
-        "user_id": data.user_id,
-        "dog_name": data.dog_name,
-        "dog_weight_kg": data.dog_weight_kg,
-        "dog_breed": data.dog_breed,
-        "dog_size": data.dog_size,
-        "limb_position": data.limb_position,
-        "limb_side": data.limb_side,
-        "stump_length_cm": data.stump_length_cm,
-        "proximal_circumference_cm": data.proximal_circumference_cm,
-        "distal_circumference_cm": data.distal_circumference_cm,
-        "base_model_name": data.base_model_name,
-        "base_model_storage_path": data.base_model_storage_path,
-        "base_source": base_source,
-        "generated_filename": result["generated_filename"],
-        "storage_bucket": GENERATED_MODELS_BUCKET,
-        "storage_path": generated_storage_path,
+        "generated_stl_path": generated_storage_path,
         "algorithm_version": result["algorithm_version"],
         "generation_parameters": result["generation_parameters"],
+        "status": "generated",
     }
+
+    if data.user_id:
+        record["user_id"] = str(data.user_id)
+    if data.request_id:
+        record["request_id"] = str(data.request_id)
+    if data.base_model_id:
+        record["base_model_id"] = str(data.base_model_id)
+
     response = supabase.table(GENERATED_MODELS_TABLE).insert(record).execute()
 
     if not response.data:
@@ -102,7 +95,6 @@ def generate_prosthesis(data: ProsthesisForm):
         download_url = _create_generated_model_signed_url(generated_storage_path)
         generated_model = _insert_generated_model_record(
             data,
-            base_source,
             generated_storage_path,
             result,
         )
