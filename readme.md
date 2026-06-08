@@ -34,8 +34,32 @@ La respuesta incluye:
 
 El archivo generado se sube a Supabase Storage en el bucket generated-models.
 El front puede descargar directamente con download_url.
+Tambien se guarda un registro en la tabla generated_models.
 
 Tambien se puede pedir una nueva signed URL con:
 
 GET /prosthesis/generated/{generated_filename}
+
+Columnas esperadas en generated_models:
+
+- id uuid primary key default gen_random_uuid()
+- created_at timestamptz default now()
+- user_id text
+- dog_name text
+- dog_weight_kg numeric
+- dog_breed text
+- dog_size text
+- limb_position text
+- limb_side text
+- stump_length_cm numeric
+- proximal_circumference_cm numeric
+- distal_circumference_cm numeric
+- base_model_name text
+- base_model_storage_path text
+- base_source text
+- generated_filename text
+- storage_bucket text
+- storage_path text
+- algorithm_version text
+- generation_parameters jsonb
 
