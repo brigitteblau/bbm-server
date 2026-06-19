@@ -3,7 +3,8 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 
-from app.models import ProsthesisForm
+from app.models import DogProsthesisRequest, ProsthesisForm, SocketParameters
+from app.services.socket_generator import SocketParameterGenerator
 from app.services.stl_modifier import generate_scaled_stl, generate_scaled_stl_from_bytes
 from app.supabase_client import supabase
 
@@ -13,6 +14,7 @@ router = APIRouter()
 GENERATED_MODELS_BUCKET = "generated-models"
 SIGNED_URL_EXPIRES_SECONDS = 60 * 60 * 24 * 7
 GENERATED_MODELS_TABLE = "generated_models"
+socket_parameter_generator = SocketParameterGenerator()
 
 
 def _clean_optional_path(value: str | None) -> str | None:
@@ -63,6 +65,11 @@ def _insert_generated_model_record(
         return None
 
     return response.data[0]
+
+
+@router.post("/socket/parameters", response_model=SocketParameters)
+def generate_socket_parameters(data: DogProsthesisRequest):
+    return socket_parameter_generator.generate(data)
 
 
 @router.post("/generate")
