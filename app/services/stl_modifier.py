@@ -1,12 +1,11 @@
 from pathlib import Path
 from io import BytesIO
-import re
-import unicodedata
 from uuid import uuid4
 
 import trimesh
 
 from app.models import ProsthesisForm
+from app.utils import safe_filename_part
 
 
 MM_PER_CM = 10.0
@@ -67,7 +66,7 @@ def _scale_and_export_mesh(
 
     mesh.apply_scale([scale_x, scale_y, scale_z])
 
-    generated_filename = f"{_safe_filename_part(data.dog_name)}-{uuid4()}.stl"
+    generated_filename = f"{safe_filename_part(data.dog_name)}-{uuid4()}.stl"
     stl_buffer = BytesIO()
     mesh.export(file_obj=stl_buffer, file_type="stl")
 
@@ -93,11 +92,3 @@ def _scale_and_export_mesh(
 def _circumference_cm_to_diameter_mm(circumference_cm: float) -> float:
     circumference_mm = float(circumference_cm * MM_PER_CM)
     return circumference_mm / 3.141592653589793
-
-
-def _safe_filename_part(value: str) -> str:
-    normalized = unicodedata.normalize("NFKD", value.strip())
-    ascii_value = normalized.encode("ascii", "ignore").decode("ascii")
-    cleaned = re.sub(r"[^a-zA-Z0-9_-]+", "-", ascii_value.lower())
-    cleaned = cleaned.strip("-_")
-    return cleaned or "perro"

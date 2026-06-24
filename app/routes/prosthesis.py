@@ -4,6 +4,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 
 from app.models import ProsthesisForm
+from app.services.blender_service import generate_gn_stl
 from app.services.stl_modifier import generate_scaled_stl, generate_scaled_stl_from_bytes
 from app.supabase_client import supabase
 
@@ -13,6 +14,15 @@ router = APIRouter()
 GENERATED_MODELS_BUCKET = "generated-models"
 SIGNED_URL_EXPIRES_SECONDS = 60 * 60 * 24 * 7
 GENERATED_MODELS_TABLE = "generated_models"
+
+
+def _select_blend_model(data: ProsthesisForm) -> str:
+    if data.limb_position == "delantera":
+        return "front-leg-default.blend"
+    elif data.limb_side == "izquierda":
+        return "rear-leg-left-default.blend"
+    else:
+        return "rear-leg-right-default.blend"
 
 
 def _clean_optional_path(value: str | None) -> str | None:
@@ -69,14 +79,19 @@ def _insert_generated_model_record(
 def generate_prosthesis(data: ProsthesisForm):
     try:
         base_stl_path = _clean_optional_path(data.base_stl_path)
-        storage_path = (
-            _clean_optional_path(data.base_model_storage_path) or "default.stl"
-        )
 
-        if base_stl_path:
+        if data.limb_position == "delantera":
+            blend_model_name = _select_blend_model(data)
+            blend_bytes = supabase.storage.from_("base-models").download(blend_model_name)
+            result = generate_gn_stl(data, blend_bytes)
+            base_source = f"supabase://base-models/{blend_model_name}"
+        elif base_stl_path:
             result = generate_scaled_stl(data, base_stl_path)
             base_source = base_stl_path
         else:
+            storage_path = (
+                _clean_optional_path(data.base_model_storage_path) or "default.stl"
+            )
             file_bytes = supabase.storage.from_("base-models").download(storage_path)
             result = generate_scaled_stl_from_bytes(data, file_bytes)
             base_source = f"supabase://base-models/{storage_path}"

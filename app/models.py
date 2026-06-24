@@ -17,6 +17,7 @@ class ProsthesisForm(BaseModel):
     stump_length_cm: float
     proximal_circumference_cm: float
     distal_circumference_cm: float
+    wall_thickness_mm: float = 3.0
     base_stl_path: str | None = None
     base_model_id: UUID | None = None
     request_id: UUID | None = None
