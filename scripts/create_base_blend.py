@@ -28,6 +28,15 @@ def _node(nodes, node_type, x=0, y=0):
     return n
 
 
+def _set_mode(node, mode):
+    # En Blender 4.x algunos nodos eliminaron .mode como propiedad;
+    # en esos casos el valor default es el que necesitamos igual.
+    try:
+        node.mode = mode
+    except AttributeError:
+        pass
+
+
 def _build_gn(ng):
     """
     Construye el node graph dentro del node group ng.
@@ -74,12 +83,12 @@ def _build_gn(ng):
 
     # ── Spine: línea desde (0,0,0) hasta (0,0,stump_length) ──────────────────
     spine = _node(nodes, "GeometryNodeCurvePrimitiveLine", x=-500, y=0)
-    spine.mode = "POINTS"
+    _set_mode(spine, "POINTS")
     links.new(combine_end.outputs["Vector"], spine.inputs["End"])
 
     # ── Remuestrear spine (128 puntos) ────────────────────────────────────────
     resample = _node(nodes, "GeometryNodeResampleCurve", x=-300, y=0)
-    resample.mode = "COUNT"
+    _set_mode(resample, "COUNT")
     resample.inputs["Count"].default_value = 128
     links.new(spine.outputs["Curve"], resample.inputs["Curve"])
 
@@ -110,7 +119,7 @@ def _build_gn(ng):
 
     # ── Perfil circular unitario (escalado por el radio de la curva) ──────────
     unit_circle = _node(nodes, "GeometryNodeCurvePrimitiveCircle", x=-100, y=-600)
-    unit_circle.mode = "RADIUS"
+    _set_mode(unit_circle, "RADIUS")
     unit_circle.inputs["Radius"].default_value = 1.0
     links.new(gi.outputs["Resolution"], unit_circle.inputs["Resolution"])
 
@@ -139,7 +148,7 @@ def _build_gn(ng):
 
     # ── CAP INFERIOR EXTERIOR (disco lleno al radio distal) ───────────────────
     outer_cap_curve = _node(nodes, "GeometryNodeCurvePrimitiveCircle", x=100, y=-800)
-    outer_cap_curve.mode = "RADIUS"
+    _set_mode(outer_cap_curve, "RADIUS")
     links.new(gi.outputs["Distal Radius"], outer_cap_curve.inputs["Radius"])
     links.new(gi.outputs["Resolution"], outer_cap_curve.inputs["Resolution"])
 
@@ -153,7 +162,7 @@ def _build_gn(ng):
     links.new(gi.outputs["Wall Thickness"], inner_distal_r.inputs[1])
 
     inner_cap_curve = _node(nodes, "GeometryNodeCurvePrimitiveCircle", x=300, y=-1000)
-    inner_cap_curve.mode = "RADIUS"
+    _set_mode(inner_cap_curve, "RADIUS")
     links.new(inner_distal_r.outputs[0], inner_cap_curve.inputs["Radius"])
     links.new(gi.outputs["Resolution"], inner_cap_curve.inputs["Resolution"])
 
