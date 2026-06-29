@@ -16,15 +16,6 @@ SIGNED_URL_EXPIRES_SECONDS = 60 * 60 * 24 * 7
 GENERATED_MODELS_TABLE = "generated_models"
 
 
-def _select_blend_model(data: ProsthesisForm) -> str:
-    if data.limb_position == "delantera":
-        return "front-leg-default.blend"
-    elif data.limb_side == "izquierda":
-        return "rear-leg-left-default.blend"
-    else:
-        return "rear-leg-right-default.blend"
-
-
 def _clean_optional_path(value: str | None) -> str | None:
     if value is None:
         return None
@@ -81,10 +72,8 @@ def generate_prosthesis(data: ProsthesisForm):
         base_stl_path = _clean_optional_path(data.base_stl_path)
 
         if data.limb_position == "delantera":
-            blend_model_name = _select_blend_model(data)
-            blend_bytes = supabase.storage.from_("base-models").download(blend_model_name)
-            result = generate_gn_stl(data, blend_bytes)
-            base_source = f"supabase://base-models/{blend_model_name}"
+            result = generate_gn_stl(data)
+            base_source = "procedural-gn"
         elif base_stl_path:
             result = generate_scaled_stl(data, base_stl_path)
             base_source = base_stl_path
