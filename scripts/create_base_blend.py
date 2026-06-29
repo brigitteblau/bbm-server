@@ -187,6 +187,15 @@ def _build_gn(ng):
 
 
 def main():
+    # bpy como paquete pip no puede guardar .blend validos.
+    # Correr con: blender --background --python create_base_blend.py
+    # o en Windows: doble clic en run_create_blend.bat
+    if not bpy.app.binary_path:
+        print("ERROR: Este script necesita correrse con Blender, no con Python directamente.")
+        print("  Windows : scripts\\run_create_blend.bat")
+        print("  Linux/Mac: blender --background --python scripts/create_base_blend.py")
+        raise SystemExit(1)
+
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
