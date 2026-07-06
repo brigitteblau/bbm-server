@@ -68,6 +68,7 @@ def _insert_generated_model_record(
 
 @router.post("/generate")
 def generate_prosthesis(data: ProsthesisForm):
+    # ── Paso 1: generar el STL ────────────────────────────────────────────────
     try:
         base_stl_path = _clean_optional_path(data.base_stl_path)
 
@@ -84,7 +85,18 @@ def generate_prosthesis(data: ProsthesisForm):
             file_bytes = supabase.storage.from_("base-models").download(storage_path)
             result = generate_scaled_stl_from_bytes(data, file_bytes)
             base_source = f"supabase://base-models/{storage_path}"
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generando el STL: {exc}",
+        ) from exc
 
+    # ── Paso 2: subir a Supabase ──────────────────────────────────────────────
+    try:
         generated_stl_bytes = result.pop("generated_stl_bytes")
         generated_filename = str(result["generated_filename"])
         generated_storage_path = generated_filename
@@ -102,14 +114,10 @@ def generate_prosthesis(data: ProsthesisForm):
             generated_storage_path,
             result,
         )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=502,
-            detail=f"No se pudo procesar el STL con Supabase: {exc}",
+            detail=f"STL generado OK pero falló Supabase: {exc}",
         ) from exc
 
     return {
