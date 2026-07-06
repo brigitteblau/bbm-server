@@ -3,6 +3,20 @@
 python -m venv venv
 venv\Scripts\activate 
 pip install -r requirements.txt
+ {
+  "dog_name": "Luna",
+  "dog_weight_kg": 12,
+  "dog_size": "mediano",
+  "limb_position": "delantera",
+  "limb_side": "izquierda",
+  "stump_length_cm": 8,
+  "proximal_circumference_cm": 15,
+  "distal_circumference_cm": 12
+}
+
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
  uvicorn app.main:app --reload
 correrlo con tu propio wifi si podes :=
