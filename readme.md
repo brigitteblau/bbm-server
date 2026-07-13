@@ -27,38 +27,25 @@ python -m pytest tests/ -v
 
 lo proximo es 
 
-POST
-/prosthesis/requests/{request_id}/generate
-Generate From Request
-
-Paso 2 del front: genera el STL a partir de una request guardada.
-
-Parameters
-Cancel
-Name	Description
-request_id *
-string($uuid)
-(path)
-f41788d1-d122-4953-82f4-a772f74e1a15
-Execute
-Clear
-Responses
-Curl
-
-curl -X 'POST' \
-  'http://127.0.0.1:8000/prosthesis/requests/f41788d1-d122-4953-82f4-a772f74e1a15/generate' \
-  -H 'accept: application/json' \
-  -d ''
-Request URL
-http://127.0.0.1:8000/prosthesis/requests/f41788d1-d122-4953-82f4-a772f74e1a15/generate
-Server response
-Code	Details
-502
-Undocumented
-Error: Bad Gateway
-
-Response body
-Download
-{
-  "detail": "Falló la subida a Supabase: {'message': 'null value in column \"base_model_id\" of relation \"generated_models\" violates not-null constraint', 'code': '23502', 'hint': None, 'details': 'Failing row contains (4bbc08d2-353f-4533-b7ec-22613c9c4441, eec346a3-8425-4e56-b077-48f733cf59e1, f41788d1-d122-4953-82f4-a772f74e1a15, null, copito-ae599438-f600-45d6-9476-39b533bffbf9.stl, null, {\"scale_x\": 51.248308722333846, \"scale_y\": 19.71360787708453, \"s..., trimesh-scale-v1, generated, 2026-07-13 02:49:57.302509+00, {\"dog_name\": \"Copito\", \"height_cm\": 9.0, \"limb_side\": \"derecha\",..., Blender deshabilitado por configuración (BLENDER_ENABLED)).'}"
-  
+Tu próximo paso, escrito
+Objetivo de la sesión Blender: que el generate devuelva "generator_used": "blender-gn-v1" con "fallback_reason": null, y que el STL abierto en el visor sea un cono hueco correcto.
+1. Python 3.11 en tu Mac (bpy no existe para tu 3.13):
+bashbrew install python@3.11
+2. Venv paralelo con 3.11 (el actual no lo toques, es tu entorno estable):
+bashcd ~/Desktop/bbm-server
+python3.11 -m venv venv311
+source venv311/bin/activate
+pip install -r requirements.txt
+pip install bpy
+El pip install bpy baja ~300 MB, paciencia. Si falla, copiame el error exacto — suele ser cuestión de versión.
+3. Verificar que bpy vive:
+bashpython -c "import bpy; print(bpy.app.version_string)"
+Anotá la versión que imprime (importa para el paso 4).
+4. El fix del export que ya sabemos que está roto (tu log lo dijo: "Converting py args to operator properties"). En blender_gn.py, en bpy.ops.wm.stl_export, cambiá use_selection=True por export_selected_objects=True. Si la versión del paso 3 es 3.x en vez de 4.x, el operador es otro (bpy.ops.export_mesh.stl con use_selection) — por eso anotaste la versión.
+5. Probar:
+bashBLENDER_ENABLED=true uvicorn app.main:app --reload
+Generá desde /docs con la misma request de Copito. Buscás: "generator_used": "blender-gn-v1", "fallback_reason": null.
+6. Verificación visual: bajá el STL del download_url, abrilo con barra espaciadora en Finder. Tiene que ser un cono hueco de ~9 cm de alto, más ancho arriba (radio ~2.9 cm) que abajo (~2.1 cm), abierto arriba, cerrado abajo con un anillo. Si en vez de eso ves un cilindro sólido, caras faltantes o un engendro, sacale screenshot y lo depuramos juntos.
+7. Confirmar el fallback sigue vivo: matá la env var, generá de nuevo, verificá que vuelve a trimesh-scale-v1. Commit final: feat: generador Blender GN funcionando local.
+8. (Solo si todo lo anterior anduvo, y es opcional hoy): medí la RAM del proceso uvicorn durante una generación con Blender (Activity Monitor → Memory). Ese número decide la estrategia de deploy, que es la sesión siguiente.
+El único paso con riesgo real de trabarse es el 2 (la instalación de bpy) — si pasa, error completo y lo resolvemos. Todo lo demás es terreno conocido. ¡Dale!
