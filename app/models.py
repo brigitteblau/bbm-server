@@ -12,8 +12,8 @@ class ProsthesisForm(BaseModel):
     dog_weight_kg: float = Field(gt=0)
     dog_breed: str | None = None
     dog_size: str | None = None
-    limb_position: str = Field(pattern="^(front|back)$")
-    limb_side: str = Field(pattern="^(left|right)$")
+    limb_position: str = Field(pattern="^(delantera|trasera)$")
+    limb_side: str = Field(pattern="^(izquierda|derecha)$")
     stump_length_cm: float = Field(gt=0)
     proximal_circumference_cm: float = Field(gt=0)
     distal_circumference_cm: float = Field(gt=0)
@@ -30,3 +30,9 @@ class SocketParameters(BaseModel):
     connector_radius_cm: float
     limb_position: str
     limb_side: str
+
+class ProsthesisRequestRecord(BaseModel):
+    """Lo que devuelve el back al crear una request."""
+
+    request_id: UUID
+    dog_name: str
