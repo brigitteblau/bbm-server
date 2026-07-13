@@ -1,8 +1,9 @@
 fastapi
-uvicorn
+uvicorn[standard]
+pydantic
 supabase
 python-dotenv
-numpy
 trimesh
-python-multipart
-bpy
+numpy
+pytest
+httpx
