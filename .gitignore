@@ -1,7 +1,5 @@
-.env
-venv
-.venv
 __pycache__/
 *.pyc
 .DS_Store
-scripts/output/
+.env
+venv/
