@@ -1,3 +1,8 @@
+
+probar el bpy y correrlo el paso 2
+
+ 8dc2193d-351e-4377-8b88-3f7c959ac3ff
+
 # BBM Server (Hunda)
 
 API para generación de prótesis caninas 3D-printables.
@@ -7,6 +12,9 @@ python3 -m venv venv
 source venv/bin/activate   # mac
 pip install -r requirements.txt
 uvicorn app.main:app --reload
+
+
+venv\Scripts\Activate.ps1
 
 ## Tests
 python -m pytest tests/ -v
@@ -49,3 +57,8 @@ Generá desde /docs con la misma request de Copito. Buscás: "generator_used": "
 7. Confirmar el fallback sigue vivo: matá la env var, generá de nuevo, verificá que vuelve a trimesh-scale-v1. Commit final: feat: generador Blender GN funcionando local.
 8. (Solo si todo lo anterior anduvo, y es opcional hoy): medí la RAM del proceso uvicorn durante una generación con Blender (Activity Monitor → Memory). Ese número decide la estrategia de deploy, que es la sesión siguiente.
 El único paso con riesgo real de trabarse es el 2 (la instalación de bpy) — si pasa, error completo y lo resolvemos. Todo lo demás es terreno conocido. ¡Dale!
+
+
+
+
+primer paso de aca ---paso 1 front
