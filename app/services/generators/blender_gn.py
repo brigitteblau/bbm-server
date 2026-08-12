@@ -65,7 +65,7 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     try:
         bpy.ops.wm.stl_export(
             filepath=tmp_path,
-            use_selection=True,
+            export_selected_objects=True,
             apply_modifiers=True,
         )
         stl_bytes = Path(tmp_path).read_bytes()
