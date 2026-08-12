@@ -48,9 +48,15 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
 
     mod = obj.modifiers.new("GeometryNodes", "NODES")
     ng = bpy.data.node_groups.new("ProsthesisSocketGN", "GeometryNodeTree")
-    mod.node_group = ng
 
+    # IMPORTANTE: construir la interfaz y el grafo de nodos ANTES de asignar
+    # ng al modifier. Si se asigna primero (como estaba antes), Blender crea
+    # los inputs del modifier (Socket_1, Socket_2, ...) en 0 y no los
+    # resincroniza con los default_value de la interfaz creados después,
+    # por lo que el socket quedaba con Stump Length/Radios/Resolution = 0
+    # y exportaba una malla vacía (STL de 84 bytes, 0 triángulos).
     _build_gn(ng, gn_params)
+    mod.node_group = ng
 
     # Espejado para pata izquierda (los defaults se modelan como derecha)
     if params.limb_side == "left":
@@ -237,4 +243,3 @@ def _build_gn(ng, params: dict) -> None:
     links.new(join.outputs["Geometry"], merge.inputs["Geometry"])
 
     links.new(merge.outputs["Geometry"], go.inputs["Geometry"])
-    
