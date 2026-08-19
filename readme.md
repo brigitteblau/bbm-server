@@ -3,6 +3,10 @@ probar el bpy y correrlo el paso 2
 
  8dc2193d-351e-4377-8b88-3f7c959ac3ff
 
+
+ to do: 
+mejorar
+
 # BBM Server (Hunda)
 
 API para generación de prótesis caninas 3D-printables.

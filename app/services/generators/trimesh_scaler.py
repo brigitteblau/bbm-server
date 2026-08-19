@@ -14,7 +14,7 @@ BASE_MODELS_BUCKET = "base-models"
 ALGORITHM_VERSION = "trimesh-scale-v1"
 
 DEFAULT_STL_BY_POSITION = {
-  "delantera": "default_front.stl",
+  "delantera": "proto.stl",
     "trasera": "default_back.stl",
 }
 
