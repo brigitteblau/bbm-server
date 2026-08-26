@@ -11,8 +11,8 @@ MAX_PAYLOAD = {
     "dog_name": "Max",
     "dog_weight_kg": 18,
     "dog_breed": "Border Collie",
-    "limb_position": "front",
-    "limb_side": "right",
+    "limb_position": "delantera",
+    "limb_side": "derecha",
     "stump_length_cm": 9,
     "proximal_circumference_cm": 18,
     "distal_circumference_cm": 13,
@@ -39,10 +39,10 @@ def test_endpoint_parametros():
     assert response.status_code == 200
     body = response.json()
     assert body["top_radius_cm"] == 2.86
-    assert body["limb_side"] == "right"
+    assert body["limb_side"] == "derecha"
 
 
 def test_endpoint_rechaza_lado_invalido():
-    payload = {**MAX_PAYLOAD, "limb_side": "center"}
+    payload = {**MAX_PAYLOAD, "limb_side": "centro"}
     response = client.post("/prosthesis/socket/parameters", json=payload)
     assert response.status_code == 422

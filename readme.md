@@ -19,6 +19,28 @@ venv\Scripts\Activate.ps1
 ## Tests
 python -m pytest tests/ -v
 
+Los tests no necesitan credenciales de Supabase ni bpy: `tests/conftest.py`
+inyecta un Supabase falso y apaga Blender.
+
+- `tests/test_parametric_socket.py`: geometría (malla cerrada, espejado, STL).
+- `tests/test_e2e_prosthesis.py`: flujo completo formulario → STL → descarga.
+
+## Generadores
+
+El back elige, el front no:
+
+1. `blender-gn-v1` — sólo si `BLENDER_ENABLED=true` y `bpy` está instalado.
+2. `parametric-socket-v2` — socket paramétrico en Python puro (sin
+   dependencias). Es el que se usa hoy por defecto.
+3. `trimesh-scale-v1` — último recurso: escala el STL base del bucket
+   `base-models`.
+
+El socket paramétrico (`app/services/generators/parametric_socket.py`) genera:
+sección elíptica, pared cónica con borde proximal evasé, fondo distal en
+cúpula hueca, slots de ventilación con ligamentos calculados, y poste
+conector con chaflán para el pilón. La malla sale watertight (se valida
+antes de subirla) y se apoya en z=0.
+
 {
   "user_id": "eec346a3-8425-4e56-b077-48f733cf59e1",
   "dog_name": "Copito",

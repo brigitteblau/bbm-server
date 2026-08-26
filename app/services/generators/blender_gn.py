@@ -53,7 +53,7 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     _build_gn(ng, gn_params)
 
     # Espejado para pata izquierda (los defaults se modelan como derecha)
-    if params.limb_side == "left":
+    if params.limb_side == "izquierda":
         obj.scale[0] = -1.0
 
     bpy.ops.object.transform_apply(scale=True)
@@ -82,7 +82,7 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
             "wall_thickness_mm":  gn_params["Wall Thickness"],
             "connector_radius_mm": params.connector_radius_cm * CM_TO_MM,
             "resolution":         gn_params["Resolution"],
-            "mirrored":           params.limb_side == "left",
+            "mirrored":           params.limb_side == "izquierda",
         },
         "algorithm_version": ALGORITHM_VERSION,
     }
