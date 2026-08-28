@@ -1,5 +1,6 @@
 """La geometría del socket: sin red, sin bpy, sin trimesh."""
 
+import math
 import struct
 
 import pytest
@@ -71,6 +72,20 @@ def test_seccion_eliptica_no_es_circulo():
 def test_hay_ventilacion_en_socket_mediano():
     _, pattern, _ = ps.build_socket_mesh(params())
     assert pattern.columns >= 3 and pattern.rows >= 1
+
+
+def test_slots_no_quedan_desproporcionados():
+    for case in CASES:
+        profile = ps.SocketProfile.from_params(case)
+        pattern = ps.plan_vents(profile)
+        if pattern.columns == 0:
+            continue
+        mean_radius = (profile.top_radius + profile.bottom_radius) / 2.0
+        width_mm = (pattern.angular_half_deg * 2 / 360.0) * 2 * math.pi * mean_radius
+        height_mm = pattern.height_half * 2 * profile.wall_height
+        assert width_mm >= ps.MIN_SLOT_MM
+        assert height_mm >= ps.MIN_SLOT_MM
+        assert height_mm <= width_mm * ps.MAX_SLOT_ASPECT + 1e-6
 
 
 def test_socket_muy_chico_no_se_perfora():

@@ -48,6 +48,8 @@ VENT_FILL_W = 0.42         # fracción del paso angular ocupada por el slot
 VENT_FILL_H = 0.68         # fracción del paso vertical ocupada por el slot
 VENT_ROUNDNESS = 2.6       # exponente de la superelipse (2 = elipse, alto = rectángulo)
 MIN_LIGAMENT_MM = 3.0      # material mínimo entre slots
+MIN_SLOT_MM = 4.0          # slot más chico que esto no vale la pena (y no imprime bien)
+MAX_SLOT_ASPECT = 2.0      # el slot no puede ser más de esto de largo respecto del ancho
 DONNING_GAP_DEG = 0.0      # abertura longitudinal para calzar (0 = cerrado)
 
 
@@ -255,7 +257,7 @@ def plan_vents(profile: SocketProfile, donning_gap_deg: float = DONNING_GAP_DEG)
     slot_width_mm = column_step_mm * VENT_FILL_W
     if column_step_mm - slot_width_mm < MIN_LIGAMENT_MM:
         slot_width_mm = max(0.0, column_step_mm - MIN_LIGAMENT_MM)
-    if slot_width_mm <= profile.wall:
+    if slot_width_mm < max(MIN_SLOT_MM, profile.wall):
         return VentPattern(0, 0, 0.0, 0.0, donning_gap_deg)
 
     angular_half_deg = (slot_width_mm / circumference) * 360.0 / 2.0
@@ -264,7 +266,9 @@ def plan_vents(profile: SocketProfile, donning_gap_deg: float = DONNING_GAP_DEG)
     slot_height_mm = row_step_mm * VENT_FILL_H
     if row_step_mm - slot_height_mm < MIN_LIGAMENT_MM:
         slot_height_mm = max(0.0, row_step_mm - MIN_LIGAMENT_MM)
-    if slot_height_mm <= profile.wall:
+    # Un slot muy alargado debilita la pared en el eje de carga.
+    slot_height_mm = min(slot_height_mm, slot_width_mm * MAX_SLOT_ASPECT)
+    if slot_height_mm < max(MIN_SLOT_MM, profile.wall):
         return VentPattern(0, 0, 0.0, 0.0, donning_gap_deg)
 
     height_half = (slot_height_mm / profile.wall_height) / 2.0
