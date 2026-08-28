@@ -69,6 +69,60 @@ def test_seccion_eliptica_no_es_circulo():
     assert max_y / max_x == pytest.approx(ps.ELLIPSE_RATIO, rel=0.02)
 
 
+def test_borde_proximal_es_redondeado():
+    mesh, _, profile = ps.build_socket_mesh(params())
+    assert profile.rim_bead > 0
+    # hay material por encima de donde termina la pared: es la media caña
+    encima = [v for v in mesh.vertices if v[2] > profile.wall_z(1.0) + 1e-6]
+    assert encima, "el borde quedó como un canto vivo"
+    assert max(v[2] for v in encima) == pytest.approx(
+        profile.wall_z(1.0) + profile.rim_bead
+    )
+
+
+def test_el_borde_de_los_slots_sigue_el_contorno():
+    """Sin snapping los agujeros salen escalonados: los bordes tienen que
+    caer sobre el contorno real del slot, no sobre la grilla."""
+    case = params(dog_name="Gigante", height_cm=22, top_radius_cm=6.0,
+                  bottom_radius_cm=5.0, wall_thickness_cm=0.5,
+                  connector_radius_cm=2.0)
+    profile = ps.SocketProfile.from_params(case)
+    pattern = ps.plan_vents(profile)
+
+    nu, nv = ps.ANGULAR_SEGMENTS, ps.WALL_SEGMENTS
+    grid = [[(360.0 * i / nu, k / nv) for k in range(nv + 1)] for i in range(nu)]
+    solid = [
+        [not pattern.is_hole(360.0 * (i + 0.5) / nu, (k + 0.5) / nv) for k in range(nv)]
+        for i in range(nu)
+    ]
+
+    def is_solid(i, k):
+        if k < 0:
+            return True
+        if k >= nv:
+            return False
+        return solid[i % nu][k]
+
+    borde = [
+        (i, k)
+        for i in range(nu)
+        for k in range(1, nv)
+        if 0 < sum(
+            (is_solid(i - 1, k - 1), is_solid(i, k - 1), is_solid(i - 1, k), is_solid(i, k))
+        ) < 4
+    ]
+    assert borde, "el caso de prueba no tiene agujeros"
+
+    def desvio_medio() -> float:
+        return sum(abs(pattern.field(*grid[i][k])) for i, k in borde) / len(borde)
+
+    antes = desvio_medio()
+    ps._snap_grid_to_vent_contour(grid, pattern, nu, nv, is_solid)
+    despues = desvio_medio()
+
+    assert despues < antes * 0.6
+
+
 def test_hay_ventilacion_en_socket_mediano():
     _, pattern, _ = ps.build_socket_mesh(params())
     assert pattern.columns >= 3 and pattern.rows >= 1
