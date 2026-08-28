@@ -136,18 +136,26 @@ def generate_from_request(request_id: UUID):
     stl_bytes = result.pop("generated_stl_bytes")
     filename = str(result["generated_filename"])
 
-    # 5. Subir a Supabase y registrar el modelo
-    try:
-        supabase.storage.from_(GENERATED_BUCKET).upload(
-            filename,
-            stl_bytes,
-            {
-                "content-type": "model/stl",
-                "upsert": "false",
-            },
-        )
+    # 5. El pie es una pieza aparte: encastra en el poste del socket.
+    foot = selector.generate_foot(params, form)
 
+    # 6. Subir a Supabase y registrar el modelo
+    try:
+        _upload(filename, stl_bytes)
         download_url = _signed_url(filename)
+
+        foot_filename = None
+        foot_download_url = None
+        if foot is not None:
+            foot_filename = str(foot["generated_filename"])
+            _upload(foot_filename, foot.pop("generated_stl_bytes"))
+            foot_download_url = _signed_url(foot_filename)
+            result["generation_parameters"]["foot"] = {
+                "storage_path": foot_filename,
+                "algorithm_version": foot["algorithm_version"],
+                **foot["generation_parameters"],
+            }
+
         record = _insert_record(
             form,
             params,
@@ -170,6 +178,8 @@ def generate_from_request(request_id: UUID):
         "generated_model_id": record.get("id") if record else None,
         "storage_path": filename,
         "download_url": download_url,
+        "foot_storage_path": foot_filename,
+        "foot_download_url": foot_download_url,
     }
 
 
@@ -188,6 +198,17 @@ def download_generated_model(filename: str):
             status_code=404,
             detail=f"STL no encontrado: {exc}",
         ) from exc
+
+
+def _upload(storage_path: str, stl_bytes: bytes) -> None:
+    supabase.storage.from_(GENERATED_BUCKET).upload(
+        storage_path,
+        stl_bytes,
+        {
+            "content-type": "model/stl",
+            "upsert": "false",
+        },
+    )
 
 
 def _signed_url(storage_path: str) -> str:

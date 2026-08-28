@@ -66,12 +66,23 @@ def test_flujo_completo_formulario_a_stl(fake_supabase):
     assert triangles > 0
     assert len(stored) == 84 + 50 * triangles
 
+    # el pie viaja como pieza aparte, con su propio STL
+    assert body["foot_storage_path"] is not None
+    assert "-pie-" in body["foot_storage_path"]
+    assert body["foot_download_url"].startswith("https://fake.supabase/")
+    pie = fake_supabase.storage.from_(GENERATED_BUCKET).download(body["foot_storage_path"])
+    (triangulos_pie,) = struct.unpack("<I", pie[80:84])
+    assert len(pie) == 84 + 50 * triangulos_pie
+
     # y quedó registrado en la tabla
     record = fake_supabase.rows(GENERATED_TABLE)[0]
     assert record["status"] == "generated"
     assert record["algorithm_version"] == "parametric-socket-v2"
     assert record["request_id"] == request_id
     assert record["generation_parameters"]["connector_radius_mm"] > 0
+    foot_record = record["generation_parameters"]["foot"]
+    assert foot_record["algorithm_version"] == "paw-foot-v1"
+    assert foot_record["bore_radius_mm"] > record["generation_parameters"]["connector_radius_mm"]
     assert body["download_url"].startswith("https://fake.supabase/")
 
 
@@ -81,6 +92,7 @@ def test_pata_izquierda_genera_espejado(fake_supabase):
     assert response.status_code == 200, response.text
     record = fake_supabase.rows(GENERATED_TABLE)[0]
     assert record["generation_parameters"]["mirrored"] is True
+    assert record["generation_parameters"]["foot"]["mirrored"] is True
 
 
 def test_dos_generaciones_no_pisan_el_mismo_archivo(fake_supabase):
@@ -88,7 +100,9 @@ def test_dos_generaciones_no_pisan_el_mismo_archivo(fake_supabase):
     primero = client.post(f"/prosthesis/requests/{request_id}/generate").json()
     segundo = client.post(f"/prosthesis/requests/{request_id}/generate").json()
     assert primero["storage_path"] != segundo["storage_path"]
-    assert len(fake_supabase.storage.from_(GENERATED_BUCKET).files) == 2
+    assert primero["foot_storage_path"] != segundo["foot_storage_path"]
+    # dos piezas por generación: socket y pie
+    assert len(fake_supabase.storage.from_(GENERATED_BUCKET).files) == 4
 
 
 def test_descarga_redirige_a_la_url_firmada(fake_supabase):

@@ -27,8 +27,12 @@ import struct
 from dataclasses import dataclass, field
 from uuid import uuid4
 
-from app.models import ProsthesisForm, SocketParameters
+from typing import TYPE_CHECKING
+
 from app.utils import safe_filename_part
+
+if TYPE_CHECKING:  # sólo para tipos: así el módulo se puede usar sin pydantic
+    from app.models import ProsthesisForm, SocketParameters
 
 CM_TO_MM = 10.0
 ALGORITHM_VERSION = "parametric-socket-v2"
@@ -153,7 +157,7 @@ class SocketProfile:
     rim_bead: float = 0.0
 
     @classmethod
-    def from_params(cls, params: SocketParameters) -> "SocketProfile":
+    def from_params(cls, params: "SocketParameters") -> "SocketProfile":
         height = params.height_cm * CM_TO_MM
         top_radius = params.top_radius_cm * CM_TO_MM
         bottom_radius = params.bottom_radius_cm * CM_TO_MM
@@ -324,7 +328,7 @@ def _centroid(mesh: Mesh, indices):
 
 
 def build_socket_mesh(
-    params: SocketParameters,
+    params: "SocketParameters",
     *,
     angular_segments: int = ANGULAR_SEGMENTS,
     wall_segments: int = WALL_SEGMENTS,
@@ -628,7 +632,7 @@ def is_available() -> bool:
     return True
 
 
-def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
+def generate(params: "SocketParameters", form: "ProsthesisForm") -> dict:
     mesh, pattern, profile = build_socket_mesh(params)
 
     mirrored = params.limb_side == "izquierda"

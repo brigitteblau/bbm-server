@@ -22,8 +22,33 @@ python -m pytest tests/ -v
 Los tests no necesitan credenciales de Supabase ni bpy: `tests/conftest.py`
 inyecta un Supabase falso y apaga Blender.
 
-- `tests/test_parametric_socket.py`: geometría (malla cerrada, espejado, STL).
+- `tests/test_parametric_socket.py`: geometría del socket (malla cerrada, espejado, STL).
+- `tests/test_paw_foot.py`: geometría del pie y su encastre con el poste.
 - `tests/test_e2e_prosthesis.py`: flujo completo formulario → STL → descarga.
+
+Si no podés instalar nada, este chequeo corre sólo con Python y verifica
+que las piezas salgan imprimibles:
+
+    python scripts/selfcheck.py
+
+## Piezas
+
+Cada generación devuelve **dos** STL:
+
+- **socket** (`parametric-socket-v2`): sección elíptica, pared cónica con
+  borde proximal en media caña, fondo distal en cúpula hueca, slots de
+  ventilación pegados a su contorno real (sin escalones) y poste conector
+  con chaflán.
+- **pie** (`paw-foot-v1`): copa que entra a presión en el poste (holgura de
+  0,35 mm), cuello y almohadilla con lóbulos. Va aparte en la respuesta
+  (`foot_storage_path`, `foot_download_url`) y conviene imprimirlo en TPU.
+
+Ambas mallas se validan watertight antes de subirlas y apoyan en z=0.
+
+Para mirarlas sin levantar el server:
+
+    python scripts/preview_socket.py --nombre Copito --peso 18 --largo 9 \
+        --proximal 18 --distal 13 --salida copito.stl --pie copito-pie.stl
 
 ## Generadores
 
@@ -35,11 +60,9 @@ El back elige, el front no:
 3. `trimesh-scale-v1` — último recurso: escala el STL base del bucket
    `base-models`.
 
-El socket paramétrico (`app/services/generators/parametric_socket.py`) genera:
-sección elíptica, pared cónica con borde proximal evasé, fondo distal en
-cúpula hueca, slots de ventilación con ligamentos calculados, y poste
-conector con chaflán para el pilón. La malla sale watertight (se valida
-antes de subirla) y se apoya en z=0.
+El pie se genera siempre con `paw-foot-v1`
+(`app/services/generators/paw_foot.py`), a partir del poste del socket.
+Si fallara, el socket igual se entrega.
 
 {
   "user_id": "eec346a3-8425-4e56-b077-48f733cf59e1",

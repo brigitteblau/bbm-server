@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.models import ProsthesisForm                     # noqa: E402
 from app.services.generators import parametric_socket as ps  # noqa: E402
+from app.services.generators import paw_foot as pf         # noqa: E402
 from app.services.generators import selector              # noqa: E402
 from app.services.socket_parameters import SocketParameterGenerator  # noqa: E402
 
@@ -29,6 +30,8 @@ def main() -> int:
     parser.add_argument("--pata", default="delantera", choices=["delantera", "trasera"])
     parser.add_argument("--lado", default="derecha", choices=["izquierda", "derecha"])
     parser.add_argument("--salida", default="socket.stl")
+    parser.add_argument("--pie", default=None,
+                        help="además del socket, escribe el pie en este archivo")
     args = parser.parse_args()
 
     form = ProsthesisForm(
@@ -61,6 +64,16 @@ def main() -> int:
           f"ventilación {info['vent_columns']}×{info['vent_rows']} · "
           f"{info['triangles']} triángulos"
           + (" · espejado" if info["mirrored"] else ""))
+
+    if args.pie:
+        foot = pf.generate(params, form)
+        Path(args.pie).write_bytes(foot["generated_stl_bytes"])
+        pie = foot["generation_parameters"]
+        print(f"✓ {args.pie}  ({len(foot['generated_stl_bytes']) / 1e6:.1f} MB)")
+        print(f"  alto {pie['total_height_mm']:.0f} mm · huella ⌀{pie['pad_radius_mm'] * 2:.0f} mm · "
+              f"encastre ⌀{pie['bore_radius_mm'] * 2:.1f} × {pie['bore_depth_mm']:.0f} mm "
+              f"(holgura {pie['fit_clearance_mm']} mm)")
+
     return 0
 
 

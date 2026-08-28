@@ -10,7 +10,7 @@ import logging
 import os
 
 from app.models import ProsthesisForm, SocketParameters
-from app.services.generators import blender_gn, parametric_socket, trimesh_scaler
+from app.services.generators import blender_gn, parametric_socket, paw_foot, trimesh_scaler
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +74,18 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
 
     result["fallback_reason"] = fallback_reason
     return result
+
+
+def generate_foot(params: SocketParameters, form: ProsthesisForm) -> dict | None:
+    """El pie que encastra en el poste del socket.
+
+    Es una pieza aparte y opcional: si falla, el socket igual se entrega.
+    """
+    try:
+        return paw_foot.generate(params, form)
+    except Exception as exc:
+        logger.warning("No se pudo generar el pie: %s", exc)
+        return None
 
 
 def _join_reasons(first: str | None, second: str) -> str:
