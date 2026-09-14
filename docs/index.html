@@ -1,0 +1,515 @@
+<title>Hunda API</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Manrope:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#eef1ee;
+    --surface:#ffffff;
+    --surface-2:#e4e9e3;
+    --ink:#16201c;
+    --ink-dim:#5b6a60;
+    --line:#d4dbd1;
+    --accent:#3f6b52;
+    --accent-ink:#ffffff;
+    --warm:#c1662f;
+    --get:#2e6ea6;
+    --get-bg:#e2edf5;
+    --post:#2e7d5b;
+    --post-bg:#e2f0e7;
+    --err:#b13b30;
+    --err-bg:#f6e3e0;
+    --mono-bg:#121815;
+    --mono-ink:#d9e6de;
+    --mono-dim:#7f9488;
+    --shadow: 0 1px 2px rgba(20,26,22,.05), 0 8px 24px -14px rgba(20,26,22,.16);
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#10140f; /* fallback, redefined below with fuller ramp */
+    }
+  }
+  :root:not([data-theme="light"]){}
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#111613;
+      --surface:#171e1a;
+      --surface-2:#1e2621;
+      --ink:#e9efe9;
+      --ink-dim:#8fa295;
+      --line:#2a332c;
+      --accent:#6fae8c;
+      --accent-ink:#0d1512;
+      --warm:#e08a4f;
+      --get:#7fb3e0;
+      --get-bg:#152532;
+      --post:#7fc9a3;
+      --post-bg:#173026;
+      --err:#e0796c;
+      --err-bg:#3a1e1a;
+      --mono-bg:#0b0f0d;
+      --mono-ink:#cfe3d7;
+      --mono-dim:#6c8377;
+      --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -14px rgba(0,0,0,.5);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#111613;
+    --surface:#171e1a;
+    --surface-2:#1e2621;
+    --ink:#e9efe9;
+    --ink-dim:#8fa295;
+    --line:#2a332c;
+    --accent:#6fae8c;
+    --accent-ink:#0d1512;
+    --warm:#e08a4f;
+    --get:#7fb3e0;
+    --get-bg:#152532;
+    --post:#7fc9a3;
+    --post-bg:#173026;
+    --err:#e0796c;
+    --err-bg:#3a1e1a;
+    --mono-bg:#0b0f0d;
+    --mono-ink:#cfe3d7;
+    --mono-dim:#6c8377;
+    --shadow: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -14px rgba(0,0,0,.5);
+  }
+
+  *{ box-sizing:border-box; }
+  html{ scroll-behavior:smooth; }
+  body{
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:'Manrope',system-ui,sans-serif;
+  }
+  code, .mono{ font-family:'JetBrains Mono',ui-monospace,monospace; }
+  a{ color:inherit; }
+
+  /* ── shell ──────────────────────────────────────────────── */
+  .shell{ display:flex; min-height:100vh; }
+
+  nav.side{
+    flex:none; width:248px; padding:24px 16px 40px;
+    border-right:1px solid var(--line); background:var(--surface);
+    position:sticky; top:0; align-self:flex-start; height:100vh; overflow-y:auto;
+  }
+  nav.side .brand{ padding:4px 10px 18px; }
+  nav.side .brand .name{ font-size:17px; font-weight:800; letter-spacing:-.01em; }
+  nav.side .brand .tag{ font-size:12px; color:var(--ink-dim); margin-top:2px; }
+  nav.side .group{ margin-top:18px; }
+  nav.side .group-label{
+    font-size:10.5px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-dim);
+    padding:0 10px 6px; font-weight:700;
+  }
+  nav.side a.item{
+    display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:8px;
+    font-size:13px; text-decoration:none; color:var(--ink); font-weight:600;
+  }
+  nav.side a.item:hover{ background:var(--surface-2); }
+  nav.side a.item .m{
+    font-size:9.5px; font-weight:800; padding:2px 5px; border-radius:5px; flex:none;
+    font-family:'JetBrains Mono',monospace;
+  }
+  nav.side a.item .m.get{ background:var(--get-bg); color:var(--get); }
+  nav.side a.item .m.post{ background:var(--post-bg); color:var(--post); }
+  nav.side a.item .p{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+  main{ flex:1; min-width:0; padding:36px clamp(20px,4vw,56px) 100px; }
+  .content{ max-width:760px; margin:0 auto; display:flex; flex-direction:column; gap:44px; }
+
+  /* ── top summary ───────────────────────────────────────── */
+  .hero{ display:flex; flex-direction:column; gap:14px; }
+  .hero h1{ margin:0; font-size:30px; font-weight:800; letter-spacing:-.015em; text-wrap:balance; }
+  .hero p.lead{ margin:0; font-size:15px; color:var(--ink-dim); max-width:60ch; line-height:1.6; }
+  .base-url-row{
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    background:var(--surface); border:1px solid var(--line); border-radius:10px;
+    padding:10px 12px; box-shadow:var(--shadow);
+  }
+  .base-url-row .lbl{ font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-dim); font-weight:700; }
+  .base-url-row code{ font-size:13.5px; flex:1; min-width:0; }
+  .copy-btn{
+    appearance:none; border:1px solid var(--line); background:var(--surface-2); color:var(--ink);
+    border-radius:7px; padding:5px 10px; font-size:11.5px; font-weight:700; cursor:pointer;
+    font-family:inherit; flex:none;
+  }
+  .copy-btn:hover{ background:var(--bg); }
+  .copy-btn.copied{ background:var(--post-bg); color:var(--post); border-color:var(--post); }
+
+  .badge-row{ display:flex; gap:8px; flex-wrap:wrap; }
+  .badge{
+    font-size:11.5px; font-weight:700; padding:5px 10px; border-radius:99px;
+    background:var(--surface-2); border:1px solid var(--line); color:var(--ink-dim);
+  }
+
+  /* ── section / endpoint ───────────────────────────────────── */
+  h2.section-title{
+    font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--ink-dim);
+    font-weight:800; margin:0 0 -18px;
+  }
+
+  .endpoint{
+    background:var(--surface); border:1px solid var(--line); border-radius:14px;
+    box-shadow:var(--shadow); padding:24px 26px; scroll-margin-top:24px;
+    display:flex; flex-direction:column; gap:16px;
+  }
+  .endpoint-head{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .method{
+    font-family:'JetBrains Mono',monospace; font-size:12px; font-weight:800;
+    padding:4px 9px; border-radius:7px; letter-spacing:.02em;
+  }
+  .method.get{ background:var(--get-bg); color:var(--get); }
+  .method.post{ background:var(--post-bg); color:var(--post); }
+  .path{ font-family:'JetBrains Mono',monospace; font-size:14.5px; font-weight:600; }
+  .endpoint p.desc{ margin:0; font-size:14px; color:var(--ink-dim); line-height:1.6; }
+
+  table.params{ width:100%; border-collapse:collapse; font-size:13px; }
+  table.params th{
+    text-align:left; font-size:10.5px; text-transform:uppercase; letter-spacing:.05em;
+    color:var(--ink-dim); font-weight:700; padding:0 10px 6px; border-bottom:1px solid var(--line);
+  }
+  table.params td{ padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+  table.params tr:last-child td{ border-bottom:none; }
+  table.params td.field{ font-family:'JetBrains Mono',monospace; font-size:12.5px; white-space:nowrap; }
+  table.params td.type{ color:var(--accent); font-family:'JetBrains Mono',monospace; font-size:12px; white-space:nowrap; }
+  table.params td.req{ font-size:11px; font-weight:700; white-space:nowrap; }
+  table.params td.req.yes{ color:var(--warm); }
+  table.params td.req.no{ color:var(--ink-dim); font-weight:600; }
+  .table-wrap{ overflow-x:auto; }
+
+  .code-block{ position:relative; }
+  .code-block .lbl{
+    font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-dim);
+    font-weight:700; margin-bottom:6px; display:block;
+  }
+  pre{
+    margin:0; background:var(--mono-bg); color:var(--mono-ink); border-radius:10px;
+    padding:14px 16px; font-family:'JetBrains Mono',monospace; font-size:12.5px; line-height:1.65;
+    overflow-x:auto;
+  }
+  pre .k{ color:#8fb8ff; }
+  pre .s{ color:#b7d9a8; }
+  pre .n{ color:#e0b26a; }
+  pre .c{ color:var(--mono-dim); }
+
+  .two-col{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:640px){ .two-col{ grid-template-columns:1fr; } }
+
+  .errors{ display:flex; flex-direction:column; gap:8px; }
+  .error-row{
+    display:flex; gap:10px; align-items:baseline; font-size:12.5px; padding:8px 10px;
+    background:var(--err-bg); border-radius:8px;
+  }
+  .error-row .code{ font-family:'JetBrains Mono',monospace; font-weight:800; color:var(--err); flex:none; }
+  .error-row .msg{ color:var(--ink); }
+
+  .flow{ display:flex; flex-direction:column; gap:0; }
+  .flow-step{ display:flex; gap:14px; padding:14px 0; border-bottom:1px solid var(--line); }
+  .flow-step:last-child{ border-bottom:none; }
+  .flow-step .n{
+    flex:none; width:26px; height:26px; border-radius:50%; background:var(--accent); color:var(--accent-ink);
+    display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:800;
+    font-family:'JetBrains Mono',monospace;
+  }
+  .flow-step .body{ flex:1; }
+  .flow-step .t{ font-size:14px; font-weight:700; }
+  .flow-step .d{ font-size:13px; color:var(--ink-dim); margin-top:2px; line-height:1.55; }
+  .flow-step code{ font-size:12.5px; background:var(--surface-2); padding:1px 6px; border-radius:5px; }
+
+  .note{
+    font-size:13px; color:var(--ink-dim); background:var(--surface-2); border:1px solid var(--line);
+    border-radius:10px; padding:12px 14px; line-height:1.6;
+  }
+  .note strong{ color:var(--ink); }
+
+  footer.page{ text-align:center; font-size:11.5px; color:var(--ink-dim); padding-top:8px; }
+
+  @media (max-width:860px){
+    .shell{ flex-direction:column; }
+    nav.side{ width:100%; height:auto; position:relative; border-right:none; border-bottom:1px solid var(--line); }
+  }
+</style>
+
+<div class="shell">
+  <nav class="side">
+    <div class="brand">
+      <div class="name">Hunda API</div>
+      <div class="tag">referencia para el front · v1.0.0</div>
+    </div>
+
+    <div class="group">
+      <div class="group-label">General</div>
+      <a class="item" href="#get-root"><span class="m get">GET</span><span class="p">/</span></a>
+      <a class="item" href="#get-health"><span class="m get">GET</span><span class="p">/health</span></a>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Prótesis</div>
+      <a class="item" href="#post-params"><span class="m post">POST</span><span class="p">/prosthesis/socket/parameters</span></a>
+      <a class="item" href="#post-requests"><span class="m post">POST</span><span class="p">/prosthesis/requests</span></a>
+      <a class="item" href="#post-generate"><span class="m post">POST</span><span class="p">/prosthesis/requests/{id}/generate</span></a>
+      <a class="item" href="#get-generated"><span class="m get">GET</span><span class="p">/prosthesis/generated/{file}</span></a>
+    </div>
+
+    <div class="group">
+      <div class="group-label">Referencia</div>
+      <a class="item" href="#flujo"><span class="p">Flujo típico</span></a>
+      <a class="item" href="#cors"><span class="p">CORS y errores</span></a>
+    </div>
+  </nav>
+
+  <main>
+    <div class="content">
+
+      <section class="hero">
+        <h1>Hunda API</h1>
+        <p class="lead">Generación y gestión de prótesis caninas 3D-printables. Esta página documenta cada endpoint tal como está desplegado ahora mismo en producción — pensada para integrarse directo desde el front.</p>
+        <div class="base-url-row">
+          <span class="lbl">Base URL</span>
+          <code id="baseUrlText">https://bbm-server-hfq1.onrender.com</code>
+          <button class="copy-btn" id="copyBase">Copiar</button>
+        </div>
+        <div class="badge-row">
+          <span class="badge">Sin autenticación (por ahora)</span>
+          <span class="badge">JSON sobre HTTPS</span>
+          <span class="badge">Hosteado en Render</span>
+        </div>
+      </section>
+
+      <section id="flujo">
+        <h2 class="section-title">Flujo típico</h2>
+        <div class="endpoint" style="margin-top:18px;">
+          <div class="flow">
+            <div class="flow-step">
+              <div class="n">1</div>
+              <div class="body">
+                <div class="t">Paso 1 del front — cargar medidas</div>
+                <div class="d">El usuario completa el formulario del perro. Opcional: llamar <code>POST /prosthesis/socket/parameters</code> para mostrar un preview de las medidas del socket sin guardar nada todavía.</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="n">2</div>
+              <div class="body">
+                <div class="t">Guardar la request</div>
+                <div class="d"><code>POST /prosthesis/requests</code> guarda las medidas en la base y devuelve un <code>request_id</code>. Guardalo en el estado del front — es lo único que se necesita para el paso siguiente.</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="n">3</div>
+              <div class="body">
+                <div class="t">Paso 2 del front — generar el modelo</div>
+                <div class="d"><code>POST /prosthesis/requests/{'{'}request_id{'}'}/generate</code> recalcula los parámetros desde la request guardada (no confía en el front), genera el STL y lo sube a Storage. Devuelve <code>download_url</code>, ya firmada.</div>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="n">4</div>
+              <div class="body">
+                <div class="t">Descarga</div>
+                <div class="d">Usá <code>download_url</code> directo (válida 7 días), o el endpoint estable <code>GET /prosthesis/generated/{'{'}filename{'}'}</code> si preferís no guardar la URL firmada.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ───────────────────────── GET / ───────────────────────── -->
+      <article class="endpoint" id="get-root">
+        <div class="endpoint-head"><span class="method get">GET</span><span class="path">/</span></div>
+        <p class="desc">Chequeo mínimo de que la API está corriendo. Útil como smoke test.</p>
+        <div class="code-block">
+          <span class="lbl">Response · 200</span>
+          <pre>{ <span class="s">"message"</span>: <span class="s">"BBM API funcionando"</span> }</pre>
+        </div>
+      </article>
+
+      <!-- ───────────────────────── GET /health ───────────────────────── -->
+      <article class="endpoint" id="get-health">
+        <div class="endpoint-head"><span class="method get">GET</span><span class="path">/health</span></div>
+        <p class="desc">Health check para monitoreo (Render, uptime checks, etc).</p>
+        <div class="code-block">
+          <span class="lbl">Response · 200</span>
+          <pre>{ <span class="s">"status"</span>: <span class="s">"ok"</span> }</pre>
+        </div>
+      </article>
+
+      <!-- ───────────────────────── POST /prosthesis/socket/parameters ───────────────────────── -->
+      <article class="endpoint" id="post-params">
+        <div class="endpoint-head"><span class="method post">POST</span><span class="path">/prosthesis/socket/parameters</span></div>
+        <p class="desc">Calcula los parámetros geométricos del socket a partir de las medidas. No guarda nada ni genera un STL — sirve para mostrar un preview en el front antes de confirmar.</p>
+
+        <span class="lbl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:700;">Body — <code>ProsthesisForm</code></span>
+        <div class="table-wrap">
+          <table class="params">
+            <tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Notas</th></tr>
+            <tr><td class="field">dog_name</td><td class="type">string</td><td class="req yes">sí</td><td>—</td></tr>
+            <tr><td class="field">dog_weight_kg</td><td class="type">float</td><td class="req yes">sí</td><td>&gt; 0</td></tr>
+            <tr><td class="field">dog_breed</td><td class="type">string | null</td><td class="req no">no</td><td>—</td></tr>
+            <tr><td class="field">dog_size</td><td class="type">string | null</td><td class="req no">no</td><td>libre, ej. "mediano"</td></tr>
+            <tr><td class="field">limb_position</td><td class="type">string</td><td class="req yes">sí</td><td><code>"delantera"</code> | <code>"trasera"</code></td></tr>
+            <tr><td class="field">limb_side</td><td class="type">string</td><td class="req yes">sí</td><td><code>"izquierda"</code> | <code>"derecha"</code></td></tr>
+            <tr><td class="field">stump_length_cm</td><td class="type">float</td><td class="req yes">sí</td><td>&gt; 0</td></tr>
+            <tr><td class="field">proximal_circumference_cm</td><td class="type">float</td><td class="req yes">sí</td><td>&gt; 0 · circunferencia arriba del muñón</td></tr>
+            <tr><td class="field">distal_circumference_cm</td><td class="type">float</td><td class="req yes">sí</td><td>&gt; 0 · circunferencia en la punta</td></tr>
+            <tr><td class="field">user_id</td><td class="type">uuid | null</td><td class="req no">no</td><td>no hace falta para este endpoint</td></tr>
+          </table>
+        </div>
+
+        <div class="two-col">
+          <div class="code-block">
+            <span class="lbl">Request</span>
+            <pre>{
+  <span class="s">"dog_name"</span>: <span class="s">"Copito"</span>,
+  <span class="s">"dog_weight_kg"</span>: <span class="n">18</span>,
+  <span class="s">"dog_breed"</span>: <span class="s">"Caniche"</span>,
+  <span class="s">"dog_size"</span>: <span class="s">"mediano"</span>,
+  <span class="s">"limb_position"</span>: <span class="s">"delantera"</span>,
+  <span class="s">"limb_side"</span>: <span class="s">"derecha"</span>,
+  <span class="s">"stump_length_cm"</span>: <span class="n">9</span>,
+  <span class="s">"proximal_circumference_cm"</span>: <span class="n">18</span>,
+  <span class="s">"distal_circumference_cm"</span>: <span class="n">13</span>
+}</pre>
+          </div>
+          <div class="code-block">
+            <span class="lbl">Response · 200</span>
+            <pre>{
+  <span class="s">"dog_name"</span>: <span class="s">"Copito"</span>,
+  <span class="s">"height_cm"</span>: <span class="n">9.0</span>,
+  <span class="s">"top_radius_cm"</span>: <span class="n">2.86</span>,
+  <span class="s">"bottom_radius_cm"</span>: <span class="n">2.07</span>,
+  <span class="s">"wall_thickness_cm"</span>: <span class="n">0.4</span>,
+  <span class="s">"connector_radius_cm"</span>: <span class="n">1.6</span>,
+  <span class="s">"limb_position"</span>: <span class="s">"delantera"</span>,
+  <span class="s">"limb_side"</span>: <span class="s">"derecha"</span>
+}</pre>
+          </div>
+        </div>
+
+        <div class="errors">
+          <div class="error-row"><span class="code">422</span><span class="msg">payload inválido — <code>limb_position</code>/<code>limb_side</code> no matchean el patrón, o algún número es ≤ 0.</span></div>
+        </div>
+      </article>
+
+      <!-- ───────────────────────── POST /prosthesis/requests ───────────────────────── -->
+      <article class="endpoint" id="post-requests">
+        <div class="endpoint-head"><span class="method post">POST</span><span class="path">/prosthesis/requests</span></div>
+        <p class="desc">Paso 1 del front: guarda las medidas del perro en la base y devuelve un <code>request_id</code> para usar en el paso de generación.</p>
+
+        <div class="note"><strong>Ojo:</strong> hoy la columna <code>user_id</code> es <code>NOT NULL</code> en la tabla <code>prosthesis_requests</code>, aunque el campo es opcional en el modelo. Mandá siempre un <code>user_id</code> válido (UUID del usuario logueado) o el insert va a fallar con 502.</div>
+
+        <span class="lbl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:700;">Body — mismo shape que <code>ProsthesisForm</code> de arriba, + <code>user_id</code></span>
+
+        <div class="two-col">
+          <div class="code-block">
+            <span class="lbl">Request</span>
+            <pre>{
+  <span class="s">"user_id"</span>: <span class="s">"eec346a3-8425-4e56-b077-48f733cf59e1"</span>,
+  <span class="s">"dog_name"</span>: <span class="s">"Copito"</span>,
+  <span class="s">"dog_weight_kg"</span>: <span class="n">18</span>,
+  <span class="s">"dog_breed"</span>: <span class="s">"Caniche"</span>,
+  <span class="s">"dog_size"</span>: <span class="s">"mediano"</span>,
+  <span class="s">"limb_position"</span>: <span class="s">"delantera"</span>,
+  <span class="s">"limb_side"</span>: <span class="s">"derecha"</span>,
+  <span class="s">"stump_length_cm"</span>: <span class="n">9</span>,
+  <span class="s">"proximal_circumference_cm"</span>: <span class="n">18</span>,
+  <span class="s">"distal_circumference_cm"</span>: <span class="n">13</span>
+}</pre>
+          </div>
+          <div class="code-block">
+            <span class="lbl">Response · 200</span>
+            <pre>{
+  <span class="s">"request_id"</span>: <span class="s">"0aa6d79a-04ab-43d5-90a0-fe5cd4331d6c"</span>,
+  <span class="s">"dog_name"</span>: <span class="s">"Copito"</span>
+}</pre>
+          </div>
+        </div>
+
+        <div class="errors">
+          <div class="error-row"><span class="code">422</span><span class="msg">payload inválido (misma validación que arriba).</span></div>
+          <div class="error-row"><span class="code">502</span><span class="msg">Supabase no pudo guardar la request (ej. <code>user_id</code> faltante, columna NOT NULL).</span></div>
+        </div>
+      </article>
+
+      <!-- ───────────────────────── POST /prosthesis/requests/{id}/generate ───────────────────────── -->
+      <article class="endpoint" id="post-generate">
+        <div class="endpoint-head"><span class="method post">POST</span><span class="path">/prosthesis/requests/{'{'}request_id{'}'}/generate</span></div>
+        <p class="desc">Paso 2 del front: genera el STL a partir de una request ya guardada. Sin body — las medidas se leen de la base, nunca del front, para no confiar en datos que el cliente pueda mandar distintos. Usa Blender si está habilitado y disponible; si no, cae a un fallback que escala un STL base con trimesh.</p>
+
+        <span class="lbl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:700;">Path param</span>
+        <div class="table-wrap">
+          <table class="params">
+            <tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Notas</th></tr>
+            <tr><td class="field">request_id</td><td class="type">uuid</td><td class="req yes">sí</td><td>el que devolvió <code>POST /prosthesis/requests</code></td></tr>
+          </table>
+        </div>
+
+        <div class="code-block">
+          <span class="lbl">Response · 200</span>
+          <pre>{
+  <span class="s">"success"</span>: <span class="k">true</span>,
+  <span class="s">"request_id"</span>: <span class="s">"0aa6d79a-04ab-43d5-90a0-fe5cd4331d6c"</span>,
+  <span class="s">"dog_name"</span>: <span class="s">"Copito"</span>,
+  <span class="s">"socket_parameters"</span>: { <span class="c">/* mismo shape que /socket/parameters */</span> },
+  <span class="s">"generator_used"</span>: <span class="s">"trimesh-scale-v1"</span>,
+  <span class="s">"fallback_reason"</span>: <span class="s">"Blender deshabilitado por configuración (BLENDER_ENABLED)"</span>,
+  <span class="s">"generated_model_id"</span>: <span class="s">"1b53cc16-fa2d-43c5-9f7f-beab769dcc74"</span>,
+  <span class="s">"storage_path"</span>: <span class="s">"copito-fc274dbe-1dfc-4f58-9dfa-ddf9f64b6275.stl"</span>,
+  <span class="s">"download_url"</span>: <span class="s">"https://…supabase.co/storage/v1/object/sign/generated-models/…"</span>
+}</pre>
+        </div>
+
+        <div class="note"><strong>generator_used</strong> es <code>"blender-gn-v1"</code> (con <code>fallback_reason: null</code>) cuando Blender generó el socket desde cero, o <code>"trimesh-scale-v1"</code> cuando se usó el fallback de escalado. Mostrar esto en el front ayuda a diferenciar la calidad del modelo generado.</div>
+
+        <div class="errors">
+          <div class="error-row"><span class="code">404</span><span class="msg"><code>request_id</code> no existe.</span></div>
+          <div class="error-row"><span class="code">422</span><span class="msg">las medidas guardadas no tienen sentido físico (ej. pared más gruesa que el radio, o radio distal mayor al proximal) — <code>detail</code> trae la lista de problemas.</span></div>
+          <div class="error-row"><span class="code">502</span><span class="msg">falló la generación del STL, o falló la subida a Supabase Storage.</span></div>
+        </div>
+      </article>
+
+      <!-- ───────────────────────── GET /prosthesis/generated/{filename} ───────────────────────── -->
+      <article class="endpoint" id="get-generated">
+        <div class="endpoint-head"><span class="method get">GET</span><span class="path">/prosthesis/generated/{'{'}filename{'}'}</span></div>
+        <p class="desc">Redirige (302) a una signed URL de Supabase Storage para descargar el STL. Alternativa a guardar la <code>download_url</code> del paso anterior — solo hace falta el nombre de archivo (<code>storage_path</code>).</p>
+
+        <span class="lbl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:700;">Path param</span>
+        <div class="table-wrap">
+          <table class="params">
+            <tr><th>Campo</th><th>Tipo</th><th>Requerido</th><th>Notas</th></tr>
+            <tr><td class="field">filename</td><td class="type">string</td><td class="req yes">sí</td><td>debe terminar en <code>.stl</code>, sin subcarpetas</td></tr>
+          </table>
+        </div>
+
+        <div class="errors">
+          <div class="error-row"><span class="code">400</span><span class="msg">nombre de archivo inválido.</span></div>
+          <div class="error-row"><span class="code">404</span><span class="msg">el STL no existe en Storage.</span></div>
+        </div>
+      </article>
+
+      <section id="cors">
+        <h2 class="section-title">CORS y errores</h2>
+        <div class="endpoint" style="margin-top:18px;">
+          <p class="desc" style="margin-bottom:4px;">Orígenes permitidos hoy: <code>http://localhost:3000</code> y <code>https://bbm-server-hfq1.onrender.com</code>. Si el front de producción va a vivir en otro dominio, hay que agregarlo a <code>ALLOWED_ORIGINS</code> en <code>app/config.py</code> antes de integrarlo — si no, el browser va a bloquear las requests aunque la API responda bien.</p>
+          <p class="desc" style="margin-top:8px;">Todos los errores de validación (422) devuelven el shape estándar de FastAPI: <code>{'{'} "detail": [...] {'}'}</code>. Los errores 502/404 devuelven <code>{'{'} "detail": "mensaje legible" {'}'}</code> — están pensados para mostrarse directo o loguearse, no son mensajes internos.</p>
+        </div>
+      </section>
+
+      <footer class="page">Hunda · API interna · actualizado a partir del deploy en Render</footer>
+    </div>
+  </main>
+</div>
+
+<script>
+  document.getElementById('copyBase').addEventListener('click', function(){
+    var btn = this;
+    var text = document.getElementById('baseUrlText').textContent;
+    function done(){
+      var original = 'Copiar';
+      btn.textContent = 'Copiado ✓';
+      btn.classList.add('copied');
+      setTimeout(function(){ btn.textContent = original; btn.classList.remove('copied'); }, 1500);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(done).catch(done);
+    } else {
+      done();
+    }
+  });
+</script>
