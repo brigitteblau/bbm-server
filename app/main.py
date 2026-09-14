@@ -17,6 +17,9 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    # Los artifacts de Claude (usados para probar la API desde el front de prueba)
+    # se sirven desde subdominios dinámicos de claudeusercontent.com / claude.site.
+    allow_origin_regex=r"https://.*\.(claudeusercontent\.com|claude\.site)",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
