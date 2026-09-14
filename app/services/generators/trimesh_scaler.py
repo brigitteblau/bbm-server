@@ -43,7 +43,7 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     scale_z = target_height_mm / base_height_mm
     mesh.apply_scale([scale_x, scale_y, scale_z])
 
-    mirrored = params.limb_side == "left"
+    mirrored = params.limb_side == "izquierda"
     if mirrored:
         mesh.apply_scale([-1, 1, 1])
         mesh.invert()  # corrige las normales después del espejo
