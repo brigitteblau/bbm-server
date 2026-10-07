@@ -1,30 +1,65 @@
+# Hunda · BBM Server
 
-probar el bpy y correrlo el paso 2
+API para generar prótesis caninas personalizadas e imprimibles en 3D.
+El front manda las medidas del perro y el server devuelve un STL listo para imprimir, guardado en Supabase.
 
- 8dc2193d-351e-4377-8b88-3f7c959ac3ff
-
-
- to do: 
-mejorar
-
-# BBM Server (Hunda)
-
-API para generación de prótesis caninas 3D-printables.
+- **Producción:** https://bbm-server-hfq1.onrender.com (docs en `/docs`)
+- **Stack:** FastAPI · Supabase (Postgres + Storage) · trimesh · Blender (opcional)
 
 ## Correr local
+
+```bash
 python3 -m venv venv
-source venv/bin/activate   # mac
+source venv/bin/activate        # Windows: venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 uvicorn app.main:app --reload
+```
 
+Abrí http://localhost:8000/docs para probar los endpoints.
 
-venv\Scripts\Activate.ps1
+### Variables de entorno (`.env`)
+
+| Variable | Para qué |
+|---|---|
+| `SUPABASE_URL` | URL del proyecto de Supabase |
+| `SUPABASE_SECRET_KEY` | Service key (escribe en tablas y storage) |
+| `BLENDER_ENABLED` | `true` para usar el generador de Blender. Por defecto `false` |
+
+Sin las variables de Supabase el server levanta igual: el error aparece recién cuando un endpoint necesita Supabase.
 
 ## Tests
-python -m pytest tests/ -v
 
+```bash
+python -m pytest tests/ -v
+```
+
+## Cómo funciona
+
+```
+POST /prosthesis/requests                    → guarda las medidas, devuelve request_id
+POST /prosthesis/requests/{request_id}/generate → genera el STL, lo sube y devuelve download_url
+```
+
+1. **Medidas → parámetros** ([socket_parameters.py](app/services/socket_parameters.py)). Las circunferencias se convierten en radios y el peso define el espesor de pared y el conector. Es la única fuente de verdad: los generadores no recalculan nada.
+2. **Validación física** (`selector.validate_geometry`). Si el socket no tiene sentido (por ejemplo, la pared es más gruesa que el radio), responde `422`.
+3. **Generación** ([selector.py](app/services/generators/selector.py)). El cliente no elige el generador, lo decide el back:
+   - `blender-gn-v1`: socket paramétrico con Geometry Nodes. Solo se usa si `BLENDER_ENABLED=true` y `bpy` está instalado.
+   - `trimesh-scale-v2` (fallback): escala el modelo base según la boca del socket, sin deformar el pie. Si la pata es izquierda, lo espeja.
+   - La respuesta incluye `generator_used` y `fallback_reason` para saber qué camino tomó.
+4. **Storage.** El STL se sube a `generated-models`, se registra en la tabla `generated_models` y se devuelve una signed URL que dura 7 días.
+
+### Otros endpoints
+
+| Método | Ruta | Qué hace |
+|---|---|---|
+| `POST` | `/prosthesis/socket/parameters` | Solo calcula los parámetros (preview en el front, no genera STL) |
+| `GET` | `/prosthesis/generated/{filename}` | Redirige a una signed URL del STL |
+| `GET` | `/health` | Healthcheck |
+
+### Ejemplo de request
+
+```json
 {
-  "user_id": "eec346a3-8425-4e56-b077-48f733cf59e1",
   "dog_name": "Copito",
   "dog_weight_kg": 18,
   "dog_breed": "Caniche",
@@ -35,34 +70,54 @@ python -m pytest tests/ -v
   "proximal_circumference_cm": 18,
   "distal_circumference_cm": 13
 }
+```
 
+`user_id` es opcional (UUID). `limb_position` acepta `delantera` o `trasera`, y `limb_side` acepta `izquierda` o `derecha`.
 
-lo proximo es 
+## Supabase
 
-Tu próximo paso, escrito
-Objetivo de la sesión Blender: que el generate devuelva "generator_used": "blender-gn-v1" con "fallback_reason": null, y que el STL abierto en el visor sea un cono hueco correcto.
-1. Python 3.11 en tu Mac (bpy no existe para tu 3.13):
-bashbrew install python@3.11
-2. Venv paralelo con 3.11 (el actual no lo toques, es tu entorno estable):
-bashcd ~/Desktop/bbm-server
-python3.11 -m venv venv311
-source venv311/bin/activate
-pip install -r requirements.txt
-pip install bpy
-El pip install bpy baja ~300 MB, paciencia. Si falla, copiame el error exacto — suele ser cuestión de versión.
-3. Verificar que bpy vive:
-bashpython -c "import bpy; print(bpy.app.version_string)"
-Anotá la versión que imprime (importa para el paso 4).
-4. El fix del export que ya sabemos que está roto (tu log lo dijo: "Converting py args to operator properties"). En blender_gn.py, en bpy.ops.wm.stl_export, cambiá use_selection=True por export_selected_objects=True. Si la versión del paso 3 es 3.x en vez de 4.x, el operador es otro (bpy.ops.export_mesh.stl con use_selection) — por eso anotaste la versión.
-5. Probar:
-bashBLENDER_ENABLED=true uvicorn app.main:app --reload
-Generá desde /docs con la misma request de Copito. Buscás: "generator_used": "blender-gn-v1", "fallback_reason": null.
-6. Verificación visual: bajá el STL del download_url, abrilo con barra espaciadora en Finder. Tiene que ser un cono hueco de ~9 cm de alto, más ancho arriba (radio ~2.9 cm) que abajo (~2.1 cm), abierto arriba, cerrado abajo con un anillo. Si en vez de eso ves un cilindro sólido, caras faltantes o un engendro, sacale screenshot y lo depuramos juntos.
-7. Confirmar el fallback sigue vivo: matá la env var, generá de nuevo, verificá que vuelve a trimesh-scale-v1. Commit final: feat: generador Blender GN funcionando local.
-8. (Solo si todo lo anterior anduvo, y es opcional hoy): medí la RAM del proceso uvicorn durante una generación con Blender (Activity Monitor → Memory). Ese número decide la estrategia de deploy, que es la sesión siguiente.
-El único paso con riesgo real de trabarse es el 2 (la instalación de bpy) — si pasa, error completo y lo resolvemos. Todo lo demás es terreno conocido. ¡Dale!
+| Recurso | Tipo | Contenido |
+|---|---|---|
+| `prosthesis_requests` | tabla | Medidas cargadas por el usuario |
+| `generated_models` | tabla | Un registro por STL generado (parámetros, generador y fallback) |
+| `base-models` | bucket | Modelos base: `proto.stl` (delantera) y `default_back.stl` (trasera) |
+| `generated-models` | bucket | STL generados para cada perro |
 
+## Modelos base
 
+Los STL de `base-models` se generan por código: es una bota con socket ventilado, talón, surcos de dedos y suela con dibujo. Los modelos están en mm, con Z hacia arriba, el perro mirando a +Y y la pata derecha como referencia.
 
+```bash
+pip install scikit-image fast-simplification        # solo para este script
+python scripts/make_base_models.py delantera out/proto.stl
+python scripts/make_base_models.py trasera   out/default_back.stl
+python -m scripts.upload_base_models out/            # sube los dos, con backup local de los anteriores
+```
 
-primer paso de aca ---paso 1 front
+Si cambiás las medidas del socket en el script, actualizá `BASE_SOCKET_DIAMETER_MM` y `BASE_SOCKET_DEPTH_MM` en [trimesh_scaler.py](app/services/generators/trimesh_scaler.py).
+
+## Generador Blender (en progreso)
+
+`bpy` necesita Python 3.11, así que se usa un venv aparte:
+
+```bash
+brew install python@3.11
+python3.11 -m venv venv311 && source venv311/bin/activate
+pip install -r requirements.txt bpy
+BLENDER_ENABLED=true uvicorn app.main:app --reload
+```
+
+Funciona si `generate` devuelve `"generator_used": "blender-gn-v1"` y `"fallback_reason": null`. Pendiente: medir la RAM durante una generación para decidir cómo deployarlo.
+
+## Estructura
+
+```
+app/
+  main.py              app FastAPI + CORS
+  routes/prosthesis.py endpoints
+  services/            medidas → parámetros, generadores de STL
+  supabase_client.py   cliente lazy
+scripts/               generación y subida de modelos base
+docs/                  documentación de la API (HTML)
+tests/
+```

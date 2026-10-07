@@ -11,7 +11,14 @@ from app.utils import safe_filename_part
 
 CM_TO_MM = 10.0
 BASE_MODELS_BUCKET = "base-models"
-ALGORITHM_VERSION = "trimesh-scale-v1"
+ALGORITHM_VERSION = "trimesh-scale-v2"
+
+# Medidas del STL base (mm): boca interna del socket y profundidad útil.
+# El escalado se ancla en el socket para no deformar el pie.
+BASE_SOCKET_DIAMETER_MM = 57.0
+BASE_SOCKET_DEPTH_MM = 118.0
+# Cuánto puede estirarse/achicarse el alto respecto del ancho (proporción)
+MAX_Z_STRETCH = 0.15
 
 DEFAULT_STL_BY_POSITION = {
   "delantera": "proto.stl",
@@ -27,26 +34,24 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     if mesh.is_empty:
         raise ValueError(f"El STL base '{base_filename}' está vacío.")
 
-    bounds = mesh.bounds
-    base_width_mm = float(bounds[1][0] - bounds[0][0])
-    base_depth_mm = float(bounds[1][1] - bounds[0][1])
-    base_height_mm = float(bounds[1][2] - bounds[0][2])
-    if 0 in (base_width_mm, base_depth_mm, base_height_mm):
-        raise ValueError("El STL base tiene un eje de tamaño cero.")
-
     target_height_mm = params.height_cm * CM_TO_MM
-    # diámetro objetivo: promedio entre proximal y distal
-    target_diameter_mm = (params.top_radius_cm + params.bottom_radius_cm) * CM_TO_MM
+    target_diameter_mm = params.top_radius_cm * 2 * CM_TO_MM
 
-    scale_x = target_diameter_mm / base_width_mm
-    scale_y = target_diameter_mm / base_depth_mm
-    scale_z = target_height_mm / base_height_mm
+    # Escala uniforme según la boca del socket; el alto acompaña el largo del
+    # muñón pero acotado, para que la bota no quede como un acordeón.
+    scale_xy = target_diameter_mm / BASE_SOCKET_DIAMETER_MM
+    scale_z = target_height_mm / BASE_SOCKET_DEPTH_MM
+    scale_z = min(
+        max(scale_z, scale_xy * (1 - MAX_Z_STRETCH)),
+        scale_xy * (1 + MAX_Z_STRETCH),
+    )
+    scale_x = scale_y = scale_xy
     mesh.apply_scale([scale_x, scale_y, scale_z])
 
     mirrored = params.limb_side == "izquierda"
     if mirrored:
+        # trimesh ya invierte el winding al aplicar una escala negativa
         mesh.apply_scale([-1, 1, 1])
-        mesh.invert()  # corrige las normales después del espejo
 
     buffer = BytesIO()
     mesh.export(file_obj=buffer, file_type="stl")
