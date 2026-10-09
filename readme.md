@@ -60,6 +60,7 @@ POST /prosthesis/requests/{request_id}/generate → genera el STL, lo sube y dev
 
 ```json
 {
+  "user_id": "eec346a3-8425-4e56-b077-48f733cf59e1",
   "dog_name": "Copito",
   "dog_weight_kg": 18,
   "dog_breed": "Caniche",
@@ -72,7 +73,7 @@ POST /prosthesis/requests/{request_id}/generate → genera el STL, lo sube y dev
 }
 ```
 
-`user_id` es opcional (UUID). `limb_position` acepta `delantera` o `trasera`, y `limb_side` acepta `izquierda` o `derecha`.
+`user_id` es **obligatorio** para crear la request: la tabla no acepta nulos, aunque el modelo de Pydantic lo marque como opcional. El del ejemplo es el usuario de prueba `brigu@test.com`. `limb_position` acepta `delantera` o `trasera`, y `limb_side` acepta `izquierda` o `derecha`.
 
 ## Supabase
 
