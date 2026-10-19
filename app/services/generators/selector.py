@@ -10,7 +10,13 @@ import logging
 import os
 
 from app.models import ProsthesisForm, SocketParameters
-from app.services.generators import blender_gn, parametric_socket, paw_foot, trimesh_scaler
+from app.services.generators import (
+    blender_gn,
+    one_piece,
+    parametric_socket,
+    paw_foot,
+    trimesh_scaler,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +80,11 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
 
     result["fallback_reason"] = fallback_reason
     return result
+
+
+def generate_one_piece(params: SocketParameters, form: ProsthesisForm) -> dict:
+    """Socket y pie fundidos en un solo STL, para imprimir sin ensamblar."""
+    return one_piece.generate(params, form)
 
 
 def generate_foot(params: SocketParameters, form: ProsthesisForm) -> dict | None:

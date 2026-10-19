@@ -26,6 +26,8 @@ inyecta un Supabase falso y apaga Blender.
 - `tests/test_paw_foot.py`: geometría del pie y su encastre con el poste.
 - `tests/test_breeds.py`: la tabla de razas y sus presets.
 - `tests/test_mass.py`: estimación de peso.
+- `tests/test_one_piece.py`: la versión fundida (cavidad, puntera, peso).
+- `tests/test_printing.py`: orientaciones de impresión.
 - `tests/test_e2e_prosthesis.py`: flujo completo formulario → STL → descarga.
 
 Si no podés instalar nada, este chequeo corre sólo con Python y verifica
@@ -41,10 +43,25 @@ total, y `mass_by_material_g` con el mismo volumen en PLA, PETG, ABS, TPU
 y nylon.
 
 Para un perro mediano (muñón de 9 cm, 18 kg) la prótesis pasó de **113 g a
-72 g** (-35%), con cuatro cambios: pared más fina y degradada (gruesa en
-la base, 72% de eso en el borde), reticulado más denso, poste conector
-hueco y almohadilla del pie ahuecada. La pared más fina además la hace
-menos dura: la rigidez a flexión va con el cubo del espesor.
+59 g** (-48%): pared más fina y degradada (gruesa en la base, 72% de eso
+en el borde), reticulado más denso, poste conector hueco y el bulbo del
+pie ahuecado siguiendo el contorno —ahí se iba el 40% del material—. La
+pared más fina además la hace menos dura: la rigidez a flexión va con el
+cubo del espesor.
+
+## Cómo imprimirlas
+
+Cada pieza sale **sin soportes**, pero cada una en su orientación, y la
+respuesta de la API la trae en `print_hints`:
+
+| pieza | orientación |
+|---|---|
+| socket (de dos piezas) | boca abajo, el borde proximal en la cama |
+| pie | parado, la almohadilla en la cama |
+| pieza entera | parada, como se usa |
+
+Las paredes son finas a propósito: lo que importa son los perímetros
+(que alcancen a llenar la pared), no el relleno.
 
 ## Razas
 
@@ -61,7 +78,12 @@ collie castiga más que un whippet) y el material sugerido.
 
 ## Piezas
 
-Cada generación devuelve **dos** STL:
+Por defecto, cada generación devuelve **dos** STL. Con
+`POST /prosthesis/requests/{id}/generate?one_piece=true` sale **una sola
+pieza** (`one-piece-v1`): socket y pie fundidos, con puntera proyectada
+hacia adelante. No hace falta ensamblar ni tener dos materiales, y pesa
+menos que las dos piezas juntas porque no lleva encastre. Es la que
+reemplaza directamente al prototipo que ya anduvo impreso.
 
 - **socket** (`parametric-socket-v2`): sección elíptica, pared cónica
   degradada con borde proximal en media caña, fondo distal en cúpula

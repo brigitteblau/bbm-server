@@ -120,8 +120,13 @@ def create_request(form: ProsthesisForm):
 
 
 @router.post("/requests/{request_id}/generate")
-def generate_from_request(request_id: UUID):
-    """Paso 2 del front: genera el STL a partir de una request guardada."""
+def generate_from_request(request_id: UUID, one_piece: bool = False):
+    """Paso 2 del front: genera el STL a partir de una request guardada.
+
+    Por defecto salen dos piezas (socket + pie, el pie en TPU y recambiable).
+    Con `one_piece=true` sale todo fundido en un solo STL: no hace falta
+    ensamblar ni tener dos materiales.
+    """
 
     # 1. Leer la request desde la DB.
     # No confiamos en que el front vuelva a mandar las medidas.
@@ -175,7 +180,11 @@ def generate_from_request(request_id: UUID):
 
     # 4. Generar STL con Blender o fallback
     try:
-        result = selector.generate(params, form)
+        if one_piece:
+            result = selector.generate_one_piece(params, form)
+            result["fallback_reason"] = None
+        else:
+            result = selector.generate(params, form)
     except Exception as exc:
         raise HTTPException(
             status_code=502,
@@ -186,7 +195,8 @@ def generate_from_request(request_id: UUID):
     filename = str(result["generated_filename"])
 
     # 5. El pie es una pieza aparte: encastra en el poste del socket.
-    foot = selector.generate_foot(params, form)
+    #    En la versión entera ya viene fundido.
+    foot = None if one_piece else selector.generate_foot(params, form)
 
     # 6. Subir a Supabase y registrar el modelo
     try:
@@ -221,6 +231,7 @@ def generate_from_request(request_id: UUID):
         "success": True,
         "request_id": str(request_id),
         "dog_name": form.dog_name,
+        "one_piece": one_piece,
         "socket_parameters": params,
         "generator_used": result["algorithm_version"],
         "fallback_reason": result["fallback_reason"],

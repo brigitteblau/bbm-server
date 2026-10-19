@@ -19,6 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.generators import parametric_socket as ps   # noqa: E402
+from app.services.generators import one_piece as op            # noqa: E402
 from app.services.generators import paw_foot as pf            # noqa: E402
 from app.utils.mass import estimate_mass_g                    # noqa: E402
 
@@ -86,6 +87,15 @@ def revisar(medidas: Medidas) -> None:
     radios = [math.hypot(x, y) for x, y, z in pie.vertices if z < foot.pad_height * 0.3]
     check(max(radios) - min(radios) > 1.0, "la almohadilla tiene los lóbulos marcados")
 
+    entera, foot_entera, _ = op.build_one_piece_mesh(medidas)
+    ps.drop_to_floor(entera)
+    check(ps.is_watertight(entera), "la versión de una pieza es una malla cerrada")
+    check(
+        foot_entera.pad_radius > perfil.bottom_radius,
+        "el pie de la versión entera es más ancho que la pierna",
+    )
+    entera_g = estimate_mass_g(ps.signed_volume(entera), "pla")
+
     stl = ps.export_binary_stl(socket)
     (triangulos,) = struct.unpack("<I", stl[80:84])
     check(len(stl) == 84 + 50 * triangulos, "el STL binario del socket es válido")
@@ -101,7 +111,7 @@ def revisar(medidas: Medidas) -> None:
     print(
         f"    reticulado {patron.columns}×{patron.rows} · "
         f"socket {socket_g:.0f} g PETG + pie {pie_g:.0f} g TPU = "
-        f"{socket_g + pie_g:.0f} g"
+        f"{socket_g + pie_g:.0f} g  ·  de una pieza: {entera_g:.0f} g PLA"
     )
 
 

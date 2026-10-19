@@ -33,6 +33,7 @@ from app.services.generators.parametric_socket import (
     signed_volume,
 )
 from app.utils import DEFAULT_FOOT_MATERIAL, estimate_mass_g, mass_by_material, safe_filename_part
+from app.utils.printing import print_hints
 
 if TYPE_CHECKING:  # sólo para tipos
     from app.models import ProsthesisForm, SocketParameters
@@ -161,7 +162,15 @@ def build_foot_mesh(
     for radius, z, _ in reversed(outer):
         if z > z_ceiling:
             continue
-        hueco = min(radius - FOOT_WALL_MM, cavity_max)
+        # Cerca del piso se angosta para dejar el aro de apoyo; más arriba
+        # sigue el contorno. La apertura gradual hace que el techo interno
+        # no quede en voladizo: se imprime sin soportes.
+        altura = z / foot.pad_height if foot.pad_height else 1.0
+        apertura = altura / 0.6
+        apertura = min(1.0, max(0.0, apertura))
+        apertura = apertura * apertura * (3.0 - 2.0 * apertura)
+        limite = cavity_max + (foot.pad_radius - cavity_max) * apertura
+        hueco = min(radius - FOOT_WALL_MM, limite)
         if hueco <= FOOT_WALL_MM:
             continue
         if cavity[-1][1] - z < 1e-9 and len(cavity) > 1:
@@ -246,6 +255,7 @@ def generate(params: "SocketParameters", form: "ProsthesisForm") -> dict:
             "ellipse_ratio": ELLIPSE_RATIO,
             "triangles": len(mesh.faces),
             "mirrored": mirrored,
+            "print_hints": print_hints("foot", DEFAULT_FOOT_MATERIAL, FOOT_WALL_MM),
         },
         "algorithm_version": ALGORITHM_VERSION,
     }

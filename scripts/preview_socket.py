@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from app.models import ProsthesisForm                     # noqa: E402
 from app.services.generators import parametric_socket as ps  # noqa: E402
 from app.services.generators import paw_foot as pf         # noqa: E402
+from app.services.generators import one_piece as op        # noqa: E402
 from app.services.generators import selector              # noqa: E402
 from app.services.socket_parameters import SocketParameterGenerator  # noqa: E402
 
@@ -32,6 +33,8 @@ def main() -> int:
     parser.add_argument("--salida", default="socket.stl")
     parser.add_argument("--pie", default=None,
                         help="además del socket, escribe el pie en este archivo")
+    parser.add_argument("--entera", action="store_true",
+                        help="una sola pieza (socket y pie fundidos) en vez del socket")
     args = parser.parse_args()
 
     form = ProsthesisForm(
@@ -52,18 +55,26 @@ def main() -> int:
             print(f"✗ {issue}", file=sys.stderr)
         return 1
 
-    result = ps.generate(params, form)
+    result = (op if args.entera else ps).generate(params, form)
     Path(args.salida).write_bytes(result["generated_stl_bytes"])
 
     info = result["generation_parameters"]
-    print(f"✓ {args.salida}  ({len(result['generated_stl_bytes']) / 1e6:.1f} MB)")
-    print(f"  alto {info['total_height_mm']:.0f} mm · "
-          f"radio {info['distal_radius_mm']:.1f}→{info['proximal_radius_mm']:.1f} mm · "
-          f"pared {info['wall_thickness_mm']:.1f} mm")
-    print(f"  conector ⌀{info['connector_radius_mm'] * 2:.1f} × {info['connector_length_mm']:.0f} mm · "
-          f"ventilación {info['vent_columns']}×{info['vent_rows']} · "
-          f"{info['triangles']} triángulos"
-          + (" · espejado" if info["mirrored"] else ""))
+    print(f"✓ {args.salida}  ({len(result['generated_stl_bytes']) / 1e6:.1f} MB)"
+          f"  ·  {info['estimated_mass_g']} g en {info['material'].upper()}")
+    print(f"  imprimir {info['print_hints']['orientation']}, sin soportes")
+    espejado = " · espejado" if info["mirrored"] else ""
+    if args.entera:
+        print(f"  alto total {info['total_height_mm']:.0f} mm · "
+              f"huella ⌀{info['pad_radius_mm'] * 2:.0f} mm · "
+              f"{info['triangles']} triángulos{espejado}")
+    else:
+        print(f"  alto {info['total_height_mm']:.0f} mm · "
+              f"radio {info['distal_radius_mm']:.1f}→{info['proximal_radius_mm']:.1f} mm · "
+              f"pared {info['wall_thickness_mm']:.1f} mm")
+        print(f"  conector ⌀{info['connector_radius_mm'] * 2:.1f} × "
+              f"{info['connector_length_mm']:.0f} mm · "
+              f"ventilación {info['vent_columns']}×{info['vent_rows']} · "
+              f"{info['triangles']} triángulos{espejado}")
 
     if args.pie:
         foot = pf.generate(params, form)

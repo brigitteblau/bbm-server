@@ -49,6 +49,7 @@ def test_flujo_completo_formulario_a_stl(fake_supabase):
     assert body["request_id"] == request_id
     assert body["dog_name"] == "Copito"
     assert body["generator_used"] == "parametric-socket-v2"
+    assert body["one_piece"] is False
     assert body["fallback_reason"] == (
         "Blender deshabilitado por configuración (BLENDER_ENABLED)"
     )
@@ -88,10 +89,42 @@ def test_flujo_completo_formulario_a_stl(fake_supabase):
     assert record["algorithm_version"] == "parametric-socket-v2"
     assert record["request_id"] == request_id
     assert record["generation_parameters"]["connector_radius_mm"] > 0
+    assert record["generation_parameters"]["print_hints"]["orientation"]
     foot_record = record["generation_parameters"]["foot"]
     assert foot_record["algorithm_version"] == "paw-foot-v1"
     assert foot_record["bore_radius_mm"] > record["generation_parameters"]["connector_radius_mm"]
     assert body["download_url"].startswith("https://fake.supabase/")
+
+
+def test_version_de_una_sola_pieza(fake_supabase):
+    """Con one_piece=true viene todo fundido: un STL, sin pie aparte."""
+    request_id = crear_request()
+    response = client.post(f"/prosthesis/requests/{request_id}/generate?one_piece=true")
+    assert response.status_code == 200, response.text
+    body = response.json()
+
+    assert body["one_piece"] is True
+    assert body["generator_used"] == "one-piece-v1"
+    assert body["foot_storage_path"] is None
+    assert body["foot_download_url"] is None
+    assert body["weight"]["foot_g"] == 0
+    assert body["weight"]["total_g"] == body["weight"]["socket_g"]
+
+    # una sola pieza en storage
+    assert len(fake_supabase.storage.from_(GENERATED_BUCKET).files) == 1
+
+    record = fake_supabase.rows(GENERATED_TABLE)[0]
+    assert record["generation_parameters"]["print_hints"]["supports"] is False
+    assert "foot" not in record["generation_parameters"]
+
+
+def test_la_pieza_entera_pesa_menos_que_las_dos_sueltas(fake_supabase):
+    request_id = crear_request()
+    dos = client.post(f"/prosthesis/requests/{request_id}/generate").json()
+    entera = client.post(
+        f"/prosthesis/requests/{request_id}/generate?one_piece=true"
+    ).json()
+    assert entera["weight"]["total_g"] < dos["weight"]["total_g"]
 
 
 def test_pata_izquierda_genera_espejado(fake_supabase):

@@ -30,6 +30,7 @@ from uuid import uuid4
 from typing import TYPE_CHECKING
 
 from app.utils import DEFAULT_SOCKET_MATERIAL, estimate_mass_g, mass_by_material, safe_filename_part
+from app.utils.printing import print_hints
 
 if TYPE_CHECKING:  # sólo para tipos: así el módulo se puede usar sin pydantic
     from app.models import ProsthesisForm, SocketParameters
@@ -350,7 +351,10 @@ def build_socket_mesh(
     ellipse_ratio: float = ELLIPSE_RATIO,
     donning_gap_deg: float = DONNING_GAP_DEG,
     vents: bool = True,
+    bottom_builder=None,
 ) -> tuple[Mesh, VentPattern, SocketProfile]:
+    """Arma el socket. `bottom_builder` permite cerrar el fondo de otra
+    manera (por ejemplo con el pie integrado, en la versión de una pieza)."""
     profile = SocketProfile.from_params(params)
     pattern = (
         plan_vents(profile, donning_gap_deg)
@@ -440,7 +444,7 @@ def build_socket_mesh(
     )
 
     # Fondo: cúpula hueca + poste conector, como perfil de revolución.
-    _build_bottom(
+    (bottom_builder or _build_bottom)(
         mesh,
         profile,
         nu,
@@ -701,6 +705,9 @@ def generate(params: "SocketParameters", form: "ProsthesisForm") -> dict:
             "wall_segments": WALL_SEGMENTS,
             "triangles": len(mesh.faces),
             "mirrored": mirrored,
+            "print_hints": print_hints(
+                "socket", DEFAULT_SOCKET_MATERIAL, profile.wall
+            ),
         },
         "algorithm_version": ALGORITHM_VERSION,
     }
