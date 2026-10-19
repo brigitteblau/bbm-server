@@ -24,6 +24,8 @@ inyecta un Supabase falso y apaga Blender.
 
 - `tests/test_parametric_socket.py`: geometría del socket (malla cerrada, espejado, STL).
 - `tests/test_paw_foot.py`: geometría del pie y su encastre con el poste.
+- `tests/test_breeds.py`: la tabla de razas y sus presets.
+- `tests/test_mass.py`: estimación de peso.
 - `tests/test_e2e_prosthesis.py`: flujo completo formulario → STL → descarga.
 
 Si no podés instalar nada, este chequeo corre sólo con Python y verifica
@@ -31,17 +33,45 @@ que las piezas salgan imprimibles:
 
     python scripts/selfcheck.py
 
+## Peso
+
+Lo que más pesa en la mano del veterinario es, literalmente, el peso. Cada
+generación devuelve `weight` con los gramos estimados de cada pieza y el
+total, y `mass_by_material_g` con el mismo volumen en PLA, PETG, ABS, TPU
+y nylon.
+
+Para un perro mediano (muñón de 9 cm, 18 kg) la prótesis pasó de **113 g a
+72 g** (-35%), con cuatro cambios: pared más fina y degradada (gruesa en
+la base, 72% de eso en el borde), reticulado más denso, poste conector
+hueco y almohadilla del pie ahuecada. La pared más fina además la hace
+menos dura: la rigidez a flexión va con el cubo del espesor.
+
+## Razas
+
+`app/data/breeds.py` tiene 23 razas con rangos de peso, proporciones
+típicas, factor de pared y material sugerido:
+
+- `GET /prosthesis/breeds` — catálogo para el desplegable del front.
+- `GET /prosthesis/breeds/{raza}/preset?limb_position=delantera` —
+  formulario precargado para esa raza.
+
+La raza **no** define la forma: eso sale siempre de las medidas del muñón
+que carga la persona. Lo que ajusta es cuánta pared conviene (un border
+collie castiga más que un whippet) y el material sugerido.
+
 ## Piezas
 
 Cada generación devuelve **dos** STL:
 
-- **socket** (`parametric-socket-v2`): sección elíptica, pared cónica con
-  borde proximal en media caña, fondo distal en cúpula hueca, slots de
-  ventilación pegados a su contorno real (sin escalones) y poste conector
-  con chaflán.
+- **socket** (`parametric-socket-v2`): sección elíptica, pared cónica
+  degradada con borde proximal en media caña, fondo distal en cúpula
+  hueca, reticulado de ventilación pegado a su contorno real (sin
+  escalones) y poste conector hueco con chaflán.
 - **pie** (`paw-foot-v1`): copa que entra a presión en el poste (holgura de
-  0,35 mm), cuello y almohadilla con lóbulos. Va aparte en la respuesta
-  (`foot_storage_path`, `foot_download_url`) y conviene imprimirlo en TPU.
+  0,35 mm), cuello y almohadilla con lóbulos, ahuecada por abajo (más
+  liviana y amortigua al pisar, dejando un aro de apoyo de 4 mm). Va
+  aparte en la respuesta (`foot_storage_path`, `foot_download_url`) y
+  conviene imprimirlo en TPU.
 
 Ambas mallas se validan watertight antes de subirlas y apoyan en z=0.
 

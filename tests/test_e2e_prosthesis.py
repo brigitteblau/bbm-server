@@ -58,7 +58,9 @@ def test_flujo_completo_formulario_a_stl(fake_supabase):
     assert socket["height_cm"] == 9
     assert socket["top_radius_cm"] == 2.86
     assert socket["bottom_radius_cm"] == 2.07
-    assert socket["wall_thickness_cm"] == 0.4
+    assert socket["wall_thickness_cm"] == 0.32
+    assert socket["breed_key"] == "caniche"
+    assert socket["recommended_material"] == "petg"
 
     # el STL quedó en storage y es un binario válido
     stored = fake_supabase.storage.from_(GENERATED_BUCKET).download(body["storage_path"])
@@ -73,6 +75,12 @@ def test_flujo_completo_formulario_a_stl(fake_supabase):
     pie = fake_supabase.storage.from_(GENERATED_BUCKET).download(body["foot_storage_path"])
     (triangulos_pie,) = struct.unpack("<I", pie[80:84])
     assert len(pie) == 84 + 50 * triangulos_pie
+
+    # el peso es el dato que mira el veterinario: tiene que venir en la respuesta
+    peso = body["weight"]
+    assert peso["socket_g"] > 0 and peso["foot_g"] > 0
+    assert peso["total_g"] == pytest.approx(peso["socket_g"] + peso["foot_g"])
+    assert peso["foot_material"] == "tpu"
 
     # y quedó registrado en la tabla
     record = fake_supabase.rows(GENERATED_TABLE)[0]
@@ -168,6 +176,45 @@ def test_preview_de_parametros_no_toca_storage(fake_supabase):
     assert response.status_code == 200
     assert response.json()["connector_radius_cm"] == 1.6
     assert fake_supabase.storage.buckets == {}
+
+
+def test_catalogo_de_razas(fake_supabase):
+    response = client.get("/prosthesis/breeds")
+    assert response.status_code == 200
+    razas = response.json()["breeds"]
+    assert len(razas) > 15
+    assert any(r["key"] == "ovejero aleman" for r in razas)
+
+
+def test_preset_por_raza_precarga_el_formulario(fake_supabase):
+    response = client.get("/prosthesis/breeds/golden retriever/preset")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["breed_key"] == "golden"
+    assert body["is_exact_match"] is True
+
+    # el preset tiene que poder mandarse tal cual al endpoint de medidas
+    sugerido = body["suggested_form"]
+    preview = client.post(
+        "/prosthesis/socket/parameters",
+        json={**sugerido, "dog_name": "Lola", "limb_side": "izquierda"},
+    )
+    assert preview.status_code == 200
+    assert preview.json()["breed_key"] == "golden"
+
+
+def test_preset_de_raza_desconocida_pide_el_peso(fake_supabase):
+    assert client.get("/prosthesis/breeds/perro-raro/preset").status_code == 404
+    con_peso = client.get("/prosthesis/breeds/perro-raro/preset?dog_weight_kg=30")
+    assert con_peso.status_code == 200
+    assert con_peso.json()["is_exact_match"] is False
+    assert con_peso.json()["size"] == "grande"
+
+
+def test_preset_rechaza_una_pata_inventada(fake_supabase):
+    assert client.get(
+        "/prosthesis/breeds/labrador/preset?limb_position=arriba"
+    ).status_code == 422
 
 
 def test_health():

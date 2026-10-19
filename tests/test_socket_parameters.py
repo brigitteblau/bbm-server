@@ -30,7 +30,9 @@ def test_parametros_para_max():
     assert params.height_cm == 9
     assert params.top_radius_cm == 2.86
     assert params.bottom_radius_cm == 2.07
-    assert params.wall_thickness_cm == 0.4
+    # 0.32 de base para 18 kg, ajustado por el factor del Border Collie (1.10)
+    assert params.wall_thickness_cm == 0.352
+    assert params.breed_key == "border collie"
     assert params.connector_radius_cm == 1.6
 
 

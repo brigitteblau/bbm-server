@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.services.generators import parametric_socket as ps   # noqa: E402
 from app.services.generators import paw_foot as pf            # noqa: E402
+from app.utils.mass import estimate_mass_g                    # noqa: E402
 
 
 @dataclass
@@ -37,10 +38,10 @@ class Medidas:
 
 
 PERROS = [
-    Medidas("Chico", 4, 1.2, 1.0, 0.3, 1.2),
-    Medidas("Mediano", 9, 2.86, 2.07, 0.4, 1.6),
-    Medidas("Grande", 22, 6.0, 5.0, 0.5, 2.0),
-    Medidas("Zurdo", 9, 2.86, 2.07, 0.4, 1.6, limb_side="izquierda"),
+    Medidas("Chico", 4, 1.2, 1.0, 0.25, 1.2),
+    Medidas("Mediano", 9, 2.86, 2.07, 0.32, 1.6),
+    Medidas("Grande", 22, 6.0, 5.0, 0.42, 2.0),
+    Medidas("Zurdo", 9, 2.86, 2.07, 0.32, 1.6, limb_side="izquierda"),
 ]
 
 fallos: list[str] = []
@@ -89,9 +90,18 @@ def revisar(medidas: Medidas) -> None:
     (triangulos,) = struct.unpack("<I", stl[80:84])
     check(len(stl) == 84 + 50 * triangulos, "el STL binario del socket es válido")
 
+    socket_g = estimate_mass_g(ps.signed_volume(socket), "petg")
+    pie_g = estimate_mass_g(ps.signed_volume(pie), "tpu")
+    # Densidad aparente: cuánto pesa respecto del cilindro que ocupa. Es la
+    # medida honesta de "qué tan hueca quedó" — la masa escala con el cubo
+    # del tamaño, así que comparar gramos entre perros no dice nada.
+    envolvente_cm3 = math.pi * (perfil.top_radius / 10) ** 2 * (perfil.total_height / 10)
+    aparente = socket_g / envolvente_cm3
+    check(aparente < 0.35, f"el socket es hueco y liviano ({aparente:.2f} g/cm³ aparente)")
     print(
-        f"    socket {len(socket.faces)} triángulos · ventilación "
-        f"{patron.columns}×{patron.rows} · pie {len(pie.faces)} triángulos"
+        f"    reticulado {patron.columns}×{patron.rows} · "
+        f"socket {socket_g:.0f} g PETG + pie {pie_g:.0f} g TPU = "
+        f"{socket_g + pie_g:.0f} g"
     )
 
 

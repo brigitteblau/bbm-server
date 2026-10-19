@@ -30,6 +30,9 @@ class SocketParameters(BaseModel):
     connector_radius_cm: float
     limb_position: str
     limb_side: str
+    breed_key: str | None = None
+    breed_size: str | None = None
+    recommended_material: str = "petg"
 
 class ProsthesisRequestRecord(BaseModel):
     """Lo que devuelve el back al crear una request."""

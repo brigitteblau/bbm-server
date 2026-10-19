@@ -32,7 +32,7 @@ from app.services.generators.parametric_socket import (
     mirror_y,
     signed_volume,
 )
-from app.utils import safe_filename_part
+from app.utils import DEFAULT_FOOT_MATERIAL, estimate_mass_g, mass_by_material, safe_filename_part
 
 if TYPE_CHECKING:  # sólo para tipos
     from app.models import ProsthesisForm, SocketParameters
@@ -47,8 +47,11 @@ CUP_WALL_MM = 2.5          # pared de la copa
 CUP_ENGAGE = 0.85          # fracción del poste que entra en la copa
 PAD_RADIUS_RATIO = 1.5     # ancho de la almohadilla respecto de la copa
 PAD_VS_SOCKET = 0.9        # …o respecto del radio distal del socket, lo que sea mayor
-PAD_HEIGHT_RATIO = 0.75    # alto de la almohadilla respecto de su radio
+PAD_HEIGHT_RATIO = 0.65    # alto de la almohadilla respecto de su radio
 NECK_RATIO = 0.35          # alto del cuello respecto del alto de la almohadilla
+FOOT_WALL_MM = 3.0         # espesor de la cáscara de la almohadilla
+CAVITY_RATIO = 0.62        # ancho máximo de la cavidad respecto de la huella
+CONTACT_RIM_MM = 4.0       # ancho mínimo del aro que apoya en el piso
 TOES = 4                   # lóbulos de la almohadilla
 TOE_DEPTH = 0.16           # cuánto marcan los lóbulos
 ELLIPSE_RATIO = 0.88       # la pata es más ancha que larga
@@ -113,40 +116,62 @@ def build_foot_mesh(
 
     chamfer = min(1.2, foot.bore_radius * 0.3)
 
-    # Perfil cerrado (radio, z, mezcla de lóbulos), recorrido desde el centro
-    # de la base hacia afuera, arriba por el exterior y de vuelta por el
-    # agujero. La mezcla apaga los lóbulos a medida que sube.
-    profile: list[tuple[float, float, float]] = [(0.0, 0.0, 1.0)]
+    # Perfil cerrado (radio, z, mezcla de lóbulos). Primero el contorno
+    # exterior, de la base hacia arriba; después la cavidad, que vuelve
+    # bajando por adentro. La mezcla apaga los lóbulos a medida que sube.
+    outer: list[tuple[float, float, float]] = []
 
-    # Base: plano de apoyo hasta el 70% del radio, después redondeo.
+    # Base: aro de apoyo plano hasta el 70% del radio, después redondeo.
     flat_radius = foot.pad_radius * 0.70
-    profile.append((flat_radius, 0.0, 1.0))
-
+    outer.append((flat_radius, 0.0, 1.0))
 
     for step in range(1, profile_segments + 1):
         phi = (math.pi / 2.0) * step / profile_segments
         radius = flat_radius + (foot.pad_radius - flat_radius) * math.sin(phi)
         z = foot.pad_height * (1.0 - math.cos(phi))
         # Los lóbulos se marcan abajo y se van desdibujando al subir.
-        profile.append((radius, z, 1.0 - 0.7 * math.sin(phi)))
+        outer.append((radius, z, 1.0 - 0.7 * math.sin(phi)))
 
     # Cuello: de la almohadilla a la copa, con curva en S.
     for step in range(1, profile_segments + 1):
         u = step / profile_segments
         eased = u * u * (3.0 - 2.0 * u)
         radius = foot.pad_radius + (foot.cup_radius - foot.pad_radius) * eased
-        profile.append((radius, z_pad + foot.neck_height * u, 0.45 * (1.0 - eased)))
+        outer.append((radius, z_pad + foot.neck_height * u, 0.45 * (1.0 - eased)))
 
     # Copa y boca achaflanada.
-    profile.append((foot.cup_radius, z_top - chamfer, 0.0))
-    profile.append((foot.cup_radius - chamfer * 0.5, z_top, 0.0))
-    profile.append((foot.bore_radius + chamfer, z_top, 0.0))
-    profile.append((foot.bore_radius, z_top - chamfer, 0.0))
+    outer.append((foot.cup_radius, z_top - chamfer, 0.0))
+    outer.append((foot.cup_radius - chamfer * 0.5, z_top, 0.0))
+    outer.append((foot.bore_radius + chamfer, z_top, 0.0))
+    outer.append((foot.bore_radius, z_top - chamfer, 0.0))
 
     # Agujero ciego hacia abajo y piso del agujero.
     z_floor = z_top - foot.bore_depth
-    profile.append((foot.bore_radius, z_floor, 0.0))
-    profile.append((0.0, z_floor, 0.0))
+    outer.append((foot.bore_radius, z_floor, 0.0))
+    outer.append((0.0, z_floor, 0.0))
+
+    # Cavidad: sigue el contorno exterior por dentro, abierta abajo. Saca el
+    # grueso del peso y de paso la pata amortigua en vez de golpear seca.
+    z_ceiling = z_floor - FOOT_WALL_MM
+    # La cavidad no puede comerse el aro de apoyo: si queda finito, el pie
+    # se deforma al pisar.
+    cavity_max = min(foot.pad_radius * CAVITY_RATIO, flat_radius - CONTACT_RIM_MM)
+
+    cavity: list[tuple[float, float, float]] = [(0.0, z_ceiling, 0.0)]
+    for radius, z, _ in reversed(outer):
+        if z > z_ceiling:
+            continue
+        hueco = min(radius - FOOT_WALL_MM, cavity_max)
+        if hueco <= FOOT_WALL_MM:
+            continue
+        if cavity[-1][1] - z < 1e-9 and len(cavity) > 1:
+            continue
+        cavity.append((hueco, z, 0.0))
+
+    if cavity[-1][1] > 1e-9:
+        cavity.append((cavity[-1][0], 0.0, 0.0))
+
+    profile = outer + cavity
 
     mesh = Mesh()
     rings: list[list[int] | int] = []
@@ -164,7 +189,7 @@ def build_foot_mesh(
             )
         rings.append(ring)
 
-    for lower, upper in zip(rings, rings[1:]):
+    for lower, upper in zip(rings, rings[1:] + rings[:1]):
         _strip(mesh, lower, upper, angular_segments)
 
     if signed_volume(mesh) < 0.0:
@@ -199,6 +224,8 @@ def generate(params: "SocketParameters", form: "ProsthesisForm") -> dict:
     if not is_watertight(mesh):
         raise ValueError("El pie generado no quedó cerrado (no es imprimible).")
 
+    volume_mm3 = signed_volume(mesh)
+
     return {
         "generated_filename": f"{safe_filename_part(params.dog_name)}-pie-{uuid4()}.stl",
         "generated_stl_bytes": export_binary_stl(mesh, f"hunda {ALGORITHM_VERSION}"),
@@ -210,6 +237,11 @@ def generate(params: "SocketParameters", form: "ProsthesisForm") -> dict:
             "cup_radius_mm": foot.cup_radius,
             "pad_radius_mm": foot.pad_radius,
             "pad_height_mm": foot.pad_height,
+            "volume_cm3": round(volume_mm3 / 1000.0, 1),
+            "estimated_mass_g": estimate_mass_g(volume_mm3, DEFAULT_FOOT_MATERIAL),
+            "material": DEFAULT_FOOT_MATERIAL,
+            "mass_by_material_g": mass_by_material(volume_mm3),
+            "cavity_wall_mm": FOOT_WALL_MM,
             "toes": TOES,
             "ellipse_ratio": ELLIPSE_RATIO,
             "triangles": len(mesh.faces),

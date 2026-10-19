@@ -4,6 +4,7 @@ from uuid import UUID
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import RedirectResponse
 
+from app.data import breeds
 from app.models import (
     ProsthesisForm,
     ProsthesisRequestRecord,
@@ -22,6 +23,54 @@ GENERATED_TABLE = "generated_models"
 REQUESTS_TABLE = "prosthesis_requests"
 
 SIGNED_URL_EXPIRES_SECONDS = 60 * 60 * 24 * 7
+
+
+@router.get("/breeds")
+def list_breeds():
+    """Catálogo de razas con medidas de arranque, para el desplegable del front.
+
+    Son valores de referencia: la prótesis se genera con las medidas reales
+    que carga la persona, no con estos.
+    """
+    return {"breeds": breeds.catalog()}
+
+
+@router.get("/breeds/{breed}/preset")
+def breed_preset(breed: str, limb_position: str = "delantera", dog_weight_kg: float | None = None):
+    """Formulario precargado para una raza: el front lo muestra y la persona corrige."""
+    if limb_position not in ("delantera", "trasera"):
+        raise HTTPException(
+            status_code=422,
+            detail="limb_position tiene que ser 'delantera' o 'trasera'",
+        )
+
+    profile = breeds.find(breed)
+    if profile is None:
+        if dog_weight_kg is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"No tengo la raza '{breed}'. Mandá dog_weight_kg y te doy "
+                    "un preset por tamaño, o usá /prosthesis/breeds para ver la lista."
+                ),
+            )
+        profile = breeds.resolve(breed, dog_weight_kg)
+
+    return {
+        "breed": profile.name,
+        "breed_key": profile.key,
+        "size": profile.size,
+        "is_exact_match": breeds.find(breed) is not None,
+        "suggested_form": {
+            "dog_breed": profile.name,
+            "dog_size": profile.size,
+            "dog_weight_kg": dog_weight_kg or profile.typical_weight_kg,
+            "limb_position": limb_position,
+            **profile.measurements_cm(limb_position),
+        },
+        "material": profile.material,
+        "notes": profile.notes,
+    }
 
 
 @router.post("/socket/parameters", response_model=SocketParameters)
@@ -180,6 +229,7 @@ def generate_from_request(request_id: UUID):
         "download_url": download_url,
         "foot_storage_path": foot_filename,
         "foot_download_url": foot_download_url,
+        "weight": _weight_summary(result, foot),
     }
 
 
@@ -198,6 +248,20 @@ def download_generated_model(filename: str):
             status_code=404,
             detail=f"STL no encontrado: {exc}",
         ) from exc
+
+
+def _weight_summary(result: dict, foot: dict | None) -> dict:
+    """Lo que termina colgando de la pata, en gramos."""
+    socket_g = result["generation_parameters"].get("estimated_mass_g", 0.0)
+    foot_g = foot["generation_parameters"].get("estimated_mass_g", 0.0) if foot else 0.0
+
+    return {
+        "socket_g": socket_g,
+        "foot_g": foot_g,
+        "total_g": round(socket_g + foot_g, 1),
+        "socket_material": result["generation_parameters"].get("material"),
+        "foot_material": foot["generation_parameters"].get("material") if foot else None,
+    }
 
 
 def _upload(storage_path: str, stl_bytes: bytes) -> None:

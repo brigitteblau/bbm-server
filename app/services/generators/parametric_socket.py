@@ -29,7 +29,7 @@ from uuid import uuid4
 
 from typing import TYPE_CHECKING
 
-from app.utils import safe_filename_part
+from app.utils import DEFAULT_SOCKET_MATERIAL, estimate_mass_g, mass_by_material, safe_filename_part
 
 if TYPE_CHECKING:  # sólo para tipos: así el módulo se puede usar sin pydantic
     from app.models import ProsthesisForm, SocketParameters
@@ -48,13 +48,17 @@ ELLIPSE_RATIO = 0.92       # aplastamiento antero-posterior de la sección
 FLARE_RATIO = 0.07         # cuánto se abre el borde proximal
 FLARE_SPAN = 0.16          # fracción superior de la pared donde se abre
 DOME_HEIGHT_RATIO = 0.30   # altura de la cúpula respecto del radio distal
-VENT_BAND = (0.14, 0.86)   # franja de la pared donde se permiten slots
-VENT_FILL_W = 0.42         # fracción del paso angular ocupada por el slot
-VENT_FILL_H = 0.68         # fracción del paso vertical ocupada por el slot
+VENT_BAND = (0.12, 0.90)   # franja de la pared donde se permiten slots
+VENT_FILL_W = 0.62         # fracción del paso angular ocupada por el slot
+VENT_FILL_H = 0.78         # fracción del paso vertical ocupada por el slot
 VENT_ROUNDNESS = 2.6       # exponente de la superelipse (2 = elipse, alto = rectángulo)
-MIN_LIGAMENT_MM = 3.0      # material mínimo entre slots
-MIN_SLOT_MM = 4.0          # slot más chico que esto no vale la pena (y no imprime bien)
-MAX_SLOT_ASPECT = 2.0      # el slot no puede ser más de esto de largo respecto del ancho
+MIN_LIGAMENT_MM = 2.2      # material mínimo entre slots
+MIN_SLOT_MM = 3.2          # slot más chico que esto no vale la pena (y no imprime bien)
+MAX_SLOT_ASPECT = 2.2      # el slot no puede ser más de esto de largo respecto del ancho
+CELL_PITCH_WALL = 2.6      # paso del reticulado, en espesores de pared
+MIN_CELL_PITCH_MM = 9.0    # …pero nunca más fino que esto
+WALL_TAPER = 0.72          # la pared proximal es esta fracción de la distal
+POST_BORE_MIN_MM = 1.5     # por debajo de esto el poste se deja macizo
 DONNING_GAP_DEG = 0.0      # abertura longitudinal para calzar (0 = cerrado)
 GAP_BAND = (0.18, 0.90)    # tramo de la pared que abarca esa abertura
 
@@ -172,7 +176,9 @@ class SocketProfile:
         connector_radius = min(connector_radius, (bottom_radius - wall) * 0.75)
         connector_radius = max(connector_radius, wall)
 
-        rim_bead = wall / 2.0
+        # La pared es gruesa donde se apoya la carga y se afina hacia el borde:
+        # saca peso y rigidez justo donde el muñón necesita que ceda.
+        rim_bead = wall * WALL_TAPER / 2.0
 
         return cls(
             total_height=height,
@@ -194,6 +200,10 @@ class SocketProfile:
             return base
         eased = _smoothstep((t - flare_start) / FLARE_SPAN)
         return base + self.top_radius * FLARE_RATIO * eased
+
+    def wall_at(self, t: float) -> float:
+        """Espesor de la pared a la altura t (1 = borde proximal)."""
+        return self.wall * (1.0 - (1.0 - WALL_TAPER) * t)
 
     def wall_z(self, t: float) -> float:
         return self.dome_height + self.wall_height * t
@@ -269,9 +279,12 @@ def plan_vents(profile: SocketProfile, donning_gap_deg: float = DONNING_GAP_DEG)
     mean_radius = (profile.top_radius + profile.bottom_radius) / 2.0
     circumference = 2.0 * math.pi * mean_radius
 
-    columns = max(0, min(10, int(circumference // 16.0)))
+    # Paso del reticulado: celdas chicas sacan más peso que pocos agujeros
+    # grandes, y dejan la pared más pareja.
+    pitch = max(MIN_CELL_PITCH_MM, profile.wall * CELL_PITCH_WALL)
+    columns = max(0, min(24, int(circumference // pitch)))
     band_mm = profile.wall_height * (VENT_BAND[1] - VENT_BAND[0])
-    rows = max(0, min(5, int(band_mm // 22.0)))
+    rows = max(0, min(14, int(band_mm // pitch)))
 
     if columns < 3 or rows < 1:
         # Socket chico: mejor sin perforar que con ligamentos de papel.
@@ -384,7 +397,7 @@ def build_socket_mesh(
             r_out = profile.outer_radius_at(t)
             outer_rings[k].append(_point(mesh, r_out, angle, z, ellipse_ratio))
             inner_rings[k].append(
-                _point(mesh, r_out - profile.wall, angle, z, ellipse_ratio)
+                _point(mesh, r_out - profile.wall_at(t), angle, z, ellipse_ratio)
             )
 
     for i in range(nu):
@@ -495,6 +508,7 @@ def _build_rim_bead(
     """Media caña que une el borde exterior con el interior."""
     bead = profile.rim_bead
 
+
     rings: list[list[int]] = [outer_top]
     for step in range(1, rim_segments):
         phi = math.pi * step / rim_segments
@@ -502,13 +516,13 @@ def _build_rim_bead(
         for i in range(nu):
             angle, t = grid[i][nv]
             r_out = profile.outer_radius_at(t)
-            center_r = r_out - bead
+            center_r = r_out - profile.wall_at(t) / 2.0
             ring.append(
                 _point(
                     mesh,
-                    center_r + bead * math.cos(phi),
+                    center_r + profile.wall_at(t) / 2.0 * math.cos(phi),
                     angle,
-                    profile.wall_z(t) + bead * math.sin(phi),
+                    profile.wall_z(t) + profile.wall_at(t) / 2.0 * math.sin(phi),
                     ellipse_ratio,
                 )
             )
@@ -551,11 +565,26 @@ def _build_bottom(
     z_post_end = z_junction - profile.post_length
     chamfer = min(1.0, r_conn * 0.25)
 
-    post_profile = [
-        (r_conn, z_post_end + chamfer),
-        (r_conn - chamfer, z_post_end),
-        (0.0, z_post_end),
-    ]
+    # El poste va hueco: macizo era puro peso muerto. Queda un tubo abierto
+    # abajo (no necesita soporte al imprimir) con el techo un espesor de pared
+    # por debajo del piso de la cavidad.
+    bore_radius = r_conn - wall
+    bore_top = 0.0  # el piso de la cavidad está en z = wall
+
+    if bore_radius >= POST_BORE_MIN_MM and bore_top - z_post_end > 2.0 * wall:
+        post_profile = [
+            (r_conn, z_post_end + chamfer),
+            (r_conn - chamfer, z_post_end),
+            (bore_radius, z_post_end),
+            (bore_radius, bore_top),
+            (0.0, bore_top),
+        ]
+    else:
+        post_profile = [
+            (r_conn, z_post_end + chamfer),
+            (r_conn - chamfer, z_post_end),
+            (0.0, z_post_end),
+        ]
 
     inner_profile: list[tuple[float, float]] = []
     r_in_bot = r_bot - wall
@@ -645,6 +674,7 @@ def generate(params: "SocketParameters", form: "ProsthesisForm") -> dict:
         raise ValueError("La malla generada no quedó cerrada (no es imprimible).")
 
     stl_bytes = export_binary_stl(mesh, f"hunda {ALGORITHM_VERSION}")
+    volume_mm3 = signed_volume(mesh)
 
     return {
         "generated_filename": f"{safe_filename_part(params.dog_name)}-{uuid4()}.stl",
@@ -659,6 +689,11 @@ def generate(params: "SocketParameters", form: "ProsthesisForm") -> dict:
             "dome_height_mm": profile.dome_height,
             "ellipse_ratio": ELLIPSE_RATIO,
             "flare_ratio": FLARE_RATIO,
+            "volume_cm3": round(volume_mm3 / 1000.0, 1),
+            "estimated_mass_g": estimate_mass_g(volume_mm3, DEFAULT_SOCKET_MATERIAL),
+            "material": DEFAULT_SOCKET_MATERIAL,
+            "mass_by_material_g": mass_by_material(volume_mm3),
+            "wall_thickness_top_mm": profile.wall_at(1.0),
             "vent_columns": pattern.columns,
             "vent_rows": pattern.rows,
             "donning_gap_deg": pattern.donning_gap_deg,
