@@ -21,7 +21,7 @@ BASE_SOCKET_DEPTH_MM = 118.0
 MAX_Z_STRETCH = 0.15
 
 DEFAULT_STL_BY_POSITION = {
-  "delantera": "proto.stl",
+    "delantera": "proto.stl",
     "trasera": "default_back.stl",
 }
 

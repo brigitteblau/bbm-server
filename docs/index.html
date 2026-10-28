@@ -392,7 +392,7 @@
         <div class="endpoint-head"><span class="method post">POST</span><span class="path">/prosthesis/requests</span></div>
         <p class="desc">Paso 1 del front: guarda las medidas del perro en la base y devuelve un <code>request_id</code> para usar en el paso de generación.</p>
 
-        <div class="note"><strong>Ojo:</strong> hoy la columna <code>user_id</code> es <code>NOT NULL</code> en la tabla <code>prosthesis_requests</code>, aunque el campo es opcional en el modelo. Mandá siempre un <code>user_id</code> válido (UUID del usuario logueado) o el insert va a fallar con 502.</div>
+        <div class="note"><strong>Ojo:</strong> <code>user_id</code> es obligatorio en este endpoint (UUID del usuario logueado), aunque en el modelo figure como opcional porque <code>/socket/parameters</code> no lo usa. Si falta, responde 422. Las medidas también se validan acá: si no tienen sentido físico, la request no se guarda.</div>
 
         <span class="lbl" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink-dim);font-weight:700;">Body — mismo shape que <code>ProsthesisForm</code> de arriba, + <code>user_id</code></span>
 
@@ -422,8 +422,8 @@
         </div>
 
         <div class="errors">
-          <div class="error-row"><span class="code">422</span><span class="msg">payload inválido (misma validación que arriba).</span></div>
-          <div class="error-row"><span class="code">502</span><span class="msg">Supabase no pudo guardar la request (ej. <code>user_id</code> faltante, columna NOT NULL).</span></div>
+          <div class="error-row"><span class="code">422</span><span class="msg">payload inválido (misma validación que arriba), falta <code>user_id</code>, o las medidas no tienen sentido físico (ej. pared más gruesa que el radio, o radio distal mayor al proximal).</span></div>
+          <div class="error-row"><span class="code">502</span><span class="msg">Supabase no pudo guardar la request.</span></div>
         </div>
       </article>
 
@@ -447,7 +447,7 @@
   <span class="s">"request_id"</span>: <span class="s">"0aa6d79a-04ab-43d5-90a0-fe5cd4331d6c"</span>,
   <span class="s">"dog_name"</span>: <span class="s">"Copito"</span>,
   <span class="s">"socket_parameters"</span>: { <span class="c">/* mismo shape que /socket/parameters */</span> },
-  <span class="s">"generator_used"</span>: <span class="s">"trimesh-scale-v1"</span>,
+  <span class="s">"generator_used"</span>: <span class="s">"trimesh-scale-v2"</span>,
   <span class="s">"fallback_reason"</span>: <span class="s">"Blender deshabilitado por configuración (BLENDER_ENABLED)"</span>,
   <span class="s">"generated_model_id"</span>: <span class="s">"1b53cc16-fa2d-43c5-9f7f-beab769dcc74"</span>,
   <span class="s">"storage_path"</span>: <span class="s">"copito-fc274dbe-1dfc-4f58-9dfa-ddf9f64b6275.stl"</span>,
@@ -455,12 +455,12 @@
 }</pre>
         </div>
 
-        <div class="note"><strong>generator_used</strong> es <code>"blender-gn-v1"</code> (con <code>fallback_reason: null</code>) cuando Blender generó el socket desde cero, o <code>"trimesh-scale-v1"</code> cuando se usó el fallback de escalado. Mostrar esto en el front ayuda a diferenciar la calidad del modelo generado.</div>
+        <div class="note"><strong>generator_used</strong> es <code>"blender-gn-v1"</code> (con <code>fallback_reason: null</code>) cuando Blender generó el socket desde cero, o <code>"trimesh-scale-v2"</code> cuando se usó el fallback de escalado. Mostrar esto en el front ayuda a diferenciar la calidad del modelo generado.</div>
 
         <div class="errors">
           <div class="error-row"><span class="code">404</span><span class="msg"><code>request_id</code> no existe.</span></div>
-          <div class="error-row"><span class="code">422</span><span class="msg">las medidas guardadas no tienen sentido físico (ej. pared más gruesa que el radio, o radio distal mayor al proximal) — <code>detail</code> trae la lista de problemas.</span></div>
-          <div class="error-row"><span class="code">502</span><span class="msg">falló la generación del STL, o falló la subida a Supabase Storage.</span></div>
+          <div class="error-row"><span class="code">422</span><span class="msg">las medidas guardadas no tienen sentido físico (ej. pared más gruesa que el radio, o radio distal mayor al proximal) — <code>detail</code> trae un error por problema. Con requests creadas después de este cambio no debería pasar, porque se validan al crearlas.</span></div>
+          <div class="error-row"><span class="code">502</span><span class="msg">no se pudo leer la request de la base, falló la generación del STL, o falló la subida a Supabase Storage.</span></div>
         </div>
       </article>
 
@@ -486,8 +486,8 @@
       <section id="cors">
         <h2 class="section-title">CORS y errores</h2>
         <div class="endpoint" style="margin-top:18px;">
-          <p class="desc" style="margin-bottom:4px;">Orígenes permitidos hoy: <code>http://localhost:3000</code> y <code>https://bbm-server-hfq1.onrender.com</code>. Si el front de producción va a vivir en otro dominio, hay que agregarlo a <code>ALLOWED_ORIGINS</code> en <code>app/config.py</code> antes de integrarlo — si no, el browser va a bloquear las requests aunque la API responda bien.</p>
-          <p class="desc" style="margin-top:8px;">Todos los errores de validación (422) devuelven el shape estándar de FastAPI: <code>{'{'} "detail": [...] {'}'}</code>. Los errores 502/404 devuelven <code>{'{'} "detail": "mensaje legible" {'}'}</code> — están pensados para mostrarse directo o loguearse, no son mensajes internos.</p>
+          <p class="desc" style="margin-bottom:4px;">Orígenes permitidos hoy: <code>http://localhost:3000</code>, <code>https://bbm-server-hfq1.onrender.com</code>, <code>https://hunda-cyan.vercel.app</code>, las previews de Vercel (<code>hunda-*.vercel.app</code>) y los artifacts de Claude (<code>*.claudeusercontent.com</code>, <code>*.claude.site</code>). Si el front de producción va a vivir en otro dominio, hay que agregarlo a <code>ALLOWED_ORIGINS</code> en <code>app/config.py</code> antes de integrarlo — si no, el browser va a bloquear las requests aunque la API responda bien.</p>
+          <p class="desc" style="margin-top:8px;">Todos los errores de validación (422) devuelven el shape estándar de FastAPI: <code>{'{'} "detail": [{'{'} "type", "loc", "msg", ... {'}'}] {'}'}</code>, incluidos los de <code>user_id</code> faltante y medidas sin sentido físico. Para mostrarlos alcanza con leer <code>detail[i].msg</code>. Los errores 502/404 devuelven <code>{'{'} "detail": "mensaje legible" {'}'}</code> — están pensados para mostrarse directo o loguearse, no son mensajes internos.</p>
         </div>
       </section>
 

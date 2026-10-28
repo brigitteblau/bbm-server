@@ -2,7 +2,9 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import RedirectResponse
+from postgrest.exceptions import APIError
 
 from app.models import (
     ProsthesisForm,
@@ -33,7 +35,22 @@ def calculate_socket_parameters(form: ProsthesisForm):
 @router.post("/requests", response_model=ProsthesisRequestRecord)
 def create_request(form: ProsthesisForm):
     """Paso 1 del front: guarda las medidas y devuelve el id."""
+    # La tabla no acepta user_id nulo: mejor un 422 claro que un 502 de Supabase.
+    if not form.user_id:
+        raise _validation_error(
+            ["user_id es obligatorio para crear la request"],
+            loc=("body", "user_id"),
+            error_type="missing",
+        )
+
+    # Validamos antes de guardar, así no quedan requests que después no se pueden generar.
+    issues = selector.validate_geometry(parameter_generator.generate(form))
+
+    if issues:
+        raise _validation_error(issues)
+
     record = {
+        "user_id": str(form.user_id),
         "dog_name": form.dog_name,
         "dog_weight_kg": form.dog_weight_kg,
         "dog_breed": form.dog_breed,
@@ -44,9 +61,6 @@ def create_request(form: ProsthesisForm):
         "proximal_circumference_cm": form.proximal_circumference_cm,
         "distal_circumference_cm": form.distal_circumference_cm,
     }
-
-    if form.user_id:
-        record["user_id"] = str(form.user_id)
 
     try:
         response = supabase.table(REQUESTS_TABLE).insert(record).execute()
@@ -84,10 +98,21 @@ def generate_from_request(request_id: UUID):
             .single()
             .execute()
         )
+    except APIError as exc:
+        # PGRST116 = .single() no encontró filas. Cualquier otro error es de Supabase.
+        if exc.code == "PGRST116":
+            raise HTTPException(
+                status_code=404,
+                detail="Request no encontrada",
+            ) from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"No se pudo leer la request: {exc}",
+        ) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=404,
-            detail=f"Request no encontrada: {exc}",
+            status_code=502,
+            detail=f"No se pudo leer la request: {exc}",
         ) from exc
 
     row = response.data
@@ -119,10 +144,7 @@ def generate_from_request(request_id: UUID):
     issues = selector.validate_geometry(params)
 
     if issues:
-        raise HTTPException(
-            status_code=422,
-            detail=issues,
-        )
+        raise _validation_error(issues)
 
     # 4. Generar STL con Blender o fallback
     try:
@@ -155,6 +177,11 @@ def generate_from_request(request_id: UUID):
             result,
         )
     except Exception as exc:
+        # Si el STL llegó a subirse, lo borramos para no dejar archivos huérfanos.
+        try:
+            supabase.storage.from_(GENERATED_BUCKET).remove([filename])
+        except Exception:
+            pass
         raise HTTPException(
             status_code=502,
             detail=f"Falló la subida a Supabase: {exc}",
@@ -188,6 +215,17 @@ def download_generated_model(filename: str):
             status_code=404,
             detail=f"STL no encontrado: {exc}",
         ) from exc
+
+
+def _validation_error(
+    messages: list[str],
+    loc: tuple[str, ...] = ("body",),
+    error_type: str = "value_error",
+) -> RequestValidationError:
+    """422 con el mismo shape que los errores de validación de FastAPI."""
+    return RequestValidationError(
+        [{"type": error_type, "loc": loc, "msg": msg} for msg in messages]
+    )
 
 
 def _signed_url(storage_path: str) -> str:

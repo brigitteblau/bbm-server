@@ -73,7 +73,7 @@ POST /prosthesis/requests/{request_id}/generate → genera el STL, lo sube y dev
 }
 ```
 
-`user_id` es **obligatorio** para crear la request: la tabla no acepta nulos, aunque el modelo de Pydantic lo marque como opcional. El del ejemplo es el usuario de prueba `brigu@test.com`. `limb_position` acepta `delantera` o `trasera`, y `limb_side` acepta `izquierda` o `derecha`.
+`user_id` es **obligatorio** para crear la request (si falta, responde `422`). En el modelo de Pydantic figura como opcional porque `/socket/parameters` no lo necesita. Las medidas se validan al crear la request, así que una geometría imposible da `422` antes de guardarse. El del ejemplo es el usuario de prueba `brigu@test.com`. `limb_position` acepta `delantera` o `trasera`, y `limb_side` acepta `izquierda` o `derecha`.
 
 ## Supabase
 
@@ -99,16 +99,16 @@ Si cambiás las medidas del socket en el script, actualizá `BASE_SOCKET_DIAMETE
 
 ## Generador Blender (en progreso)
 
-`bpy` necesita Python 3.11, así que se usa un venv aparte:
+`bpy` 5.x anda con Python 3.13 (probado con 5.2.3). Pesa bastante, así que no está en `requirements.txt`:
 
 ```bash
-brew install python@3.11
-python3.11 -m venv venv311 && source venv311/bin/activate
 pip install -r requirements.txt bpy
 BLENDER_ENABLED=true uvicorn app.main:app --reload
 ```
 
-Funciona si `generate` devuelve `"generator_used": "blender-gn-v1"` y `"fallback_reason": null`. Pendiente: medir la RAM durante una generación para decidir cómo deployarlo.
+Funciona si `generate` devuelve `"generator_used": "blender-gn-v1"` y `"fallback_reason": null`.
+
+El socket es un vaso cónico: cono exterior menos cono interior (Mesh Boolean exacto). Sale cerrado (watertight), con la base en z=0, el fondo y la pared del espesor que da el peso y la boca abierta arriba. Por ahora no incluye el conector. Cada generación tarda unos 0.1 s y el proceso llega a unos 255 MB de RAM con Blender cargado.
 
 ## Estructura
 

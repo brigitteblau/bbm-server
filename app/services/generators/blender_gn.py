@@ -92,13 +92,6 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
         },
         "algorithm_version": ALGORITHM_VERSION,
     }
-def _set_mode(node, mode: str) -> None:
-    # En Blender 4.x algunos nodos eliminaron .mode como propiedad;
-    # en esos casos el valor default ya es el que necesitamos.
-    try:
-        node.mode = mode
-    except AttributeError:
-        pass
 
 
 def _n(nodes, node_type: str, x: int = 0, y: int = 0):
@@ -107,15 +100,45 @@ def _n(nodes, node_type: str, x: int = 0, y: int = 0):
     return n
 
 
+def _math(nodes, links, operation: str, a, b, x: int = 0, y: int = 0):
+    n = _n(nodes, "ShaderNodeMath", x=x, y=y)
+    n.operation = operation
+    links.new(a, n.inputs[0])
+    links.new(b, n.inputs[1])
+    return n.outputs[0]
+
+
+def _translate_z(nodes, links, geometry, z, x: int = 0, y: int = 0):
+    shift = _n(nodes, "ShaderNodeCombineXYZ", x=x, y=y - 200)
+    links.new(z, shift.inputs["Z"])
+
+    move = _n(nodes, "GeometryNodeTransform", x=x, y=y)
+    links.new(geometry, move.inputs["Geometry"])
+    links.new(shift.outputs["Vector"], move.inputs["Translation"])
+    return move.outputs["Geometry"]
+
+
+def _cone(nodes, links, gi, radius_bottom, radius_top, x: int = 0, y: int = 0):
+    """Cono con tapas, de alto Stump Length."""
+    cone = _n(nodes, "GeometryNodeMeshCone", x=x, y=y)
+    cone.fill_type = "NGON"
+    links.new(gi.outputs["Resolution"],   cone.inputs["Vertices"])
+    links.new(gi.outputs["Stump Length"], cone.inputs["Depth"])
+    links.new(radius_bottom,              cone.inputs["Radius Bottom"])
+    links.new(radius_top,                 cone.inputs["Radius Top"])
+    return cone.outputs["Mesh"]
+
+
 def _build_gn(ng, params: dict) -> None:
     """
     Construye el node graph dentro de ng.
 
-    Geometría: cilindro cónico hueco (socket de prótesis).
-      - Shell exterior: de Distal Radius (z=0) a Proximal Radius (z=Stump Length)
-      - Shell interior: mismo cono desplazado -Wall Thickness (normales invertidas)
-      - Cap inferior: anillo cerrado en z=0
-      - Top abierto: encaja el muñón
+    Geometría: vaso cónico (socket de prótesis) = cono exterior − cono interior.
+      - Exterior: de Distal Radius (z=0) a Proximal Radius (z=Stump Length)
+      - Interior: el mismo cono corrido Wall Thickness hacia adentro y hacia
+        arriba, así el fondo queda con el mismo espesor que la pared
+      - Top abierto: el interior sobresale por arriba y el boolean abre la boca
+    El boolean exacto deja una malla cerrada (watertight), lista para imprimir.
     """
     nodes = ng.nodes
     links = ng.links
@@ -136,110 +159,50 @@ def _build_gn(ng, params: dict) -> None:
     s.default_value = params["Resolution"]
 
     gi = _n(nodes, "NodeGroupInput",  x=-900, y=0)
-    go = _n(nodes, "NodeGroupOutput", x=1500, y=0)
+    go = _n(nodes, "NodeGroupOutput", x=1150, y=0)
 
-    # ── Spine: línea de (0,0,0) a (0,0,Stump Length) ────────────────────────
-    end_xyz = _n(nodes, "ShaderNodeCombineXYZ", x=-700, y=0)
-    links.new(gi.outputs["Stump Length"], end_xyz.inputs["Z"])
+    length = gi.outputs["Stump Length"]
+    proximal = gi.outputs["Proximal Radius"]
+    distal = gi.outputs["Distal Radius"]
+    wall = gi.outputs["Wall Thickness"]
 
-    spine = _n(nodes, "GeometryNodeCurvePrimitiveLine", x=-500, y=0)
-    _set_mode(spine, "POINTS")
-    links.new(end_xyz.outputs["Vector"], spine.inputs["End"])
+    # ── Cono exterior ─────────────────────────────────────────────────────────
+    outer = _cone(nodes, links, gi, distal, proximal, x=-200, y=300)
 
-    resample = _n(nodes, "GeometryNodeResampleCurve", x=-300, y=0)
-    _set_mode(resample, "COUNT")
-    resample.inputs["Count"].default_value = 128
-    links.new(spine.outputs["Curve"], resample.inputs["Curve"])
+    # ── Cono interior ─────────────────────────────────────────────────────────
+    # Al subirlo Wall Thickness, el radio tiene que crecer lo que crece el cono
+    # en esa altura (k = pendiente * Wall Thickness) para que la pared quede pareja.
+    r_range = _math(nodes, links, "SUBTRACT", proximal, distal, x=-700, y=-300)
+    slope = _math(nodes, links, "DIVIDE", r_range, length, x=-550, y=-300)
+    k = _math(nodes, links, "MULTIPLY", slope, wall, x=-400, y=-300)
+    k_minus_wall = _math(nodes, links, "SUBTRACT", k, wall, x=-250, y=-300)
+    inner_bottom = _math(nodes, links, "ADD", distal, k_minus_wall, x=-100, y=-200)
+    inner_top = _math(nodes, links, "ADD", proximal, k_minus_wall, x=-100, y=-400)
+    inner = _cone(nodes, links, gi, inner_bottom, inner_top, x=100, y=-300)
+    inner = _translate_z(nodes, links, inner, wall, x=300, y=-300)
 
-    # ── Factor 0→1 a lo largo de la spine (0=distal, 1=proximal) ────────────
-    spline_param = _n(nodes, "GeometryNodeSplineParameter", x=-300, y=-300)
+    # ── Exterior − interior ───────────────────────────────────────────────────
+    boolean = _n(nodes, "GeometryNodeMeshBoolean", x=500, y=0)
+    boolean.operation = "DIFFERENCE"
+    boolean.solver = "EXACT"
+    links.new(outer, boolean.inputs["Mesh 1"])
+    links.new(inner, boolean.inputs["Mesh 2"])
 
-    # outer_r(t) = Distal + (Proximal - Distal) * t
-    r_range = _n(nodes, "ShaderNodeMath", x=-100, y=-300)
-    r_range.operation = "SUBTRACT"
-    links.new(gi.outputs["Proximal Radius"], r_range.inputs[0])
-    links.new(gi.outputs["Distal Radius"],   r_range.inputs[1])
+    # ── Apoyar la base en z=0 ─────────────────────────────────────────────────
+    # Según la versión de Blender el primitivo Cone viene centrado o apoyado en
+    # z=0: alineamos por el bounding box para no depender de eso.
+    bbox = _n(nodes, "GeometryNodeBoundBox", x=500, y=-300)
+    links.new(boolean.outputs["Mesh"], bbox.inputs["Geometry"])
 
-    r_scaled = _n(nodes, "ShaderNodeMath", x=100, y=-300)
-    r_scaled.operation = "MULTIPLY"
-    links.new(r_range.outputs[0],             r_scaled.inputs[0])
-    links.new(spline_param.outputs["Factor"], r_scaled.inputs[1])
+    min_xyz = _n(nodes, "ShaderNodeSeparateXYZ", x=650, y=-300)
+    links.new(bbox.outputs["Min"], min_xyz.inputs[0])
 
-    outer_r = _n(nodes, "ShaderNodeMath", x=300, y=-300)
-    outer_r.operation = "ADD"
-    links.new(gi.outputs["Distal Radius"], outer_r.inputs[0])
-    links.new(r_scaled.outputs[0],         outer_r.inputs[1])
+    neg_min_z = _n(nodes, "ShaderNodeMath", x=800, y=-300)
+    neg_min_z.operation = "MULTIPLY"
+    neg_min_z.inputs[1].default_value = -1.0
+    links.new(min_xyz.outputs["Z"], neg_min_z.inputs[0])
 
-    # inner_r(t) = outer_r(t) - Wall Thickness
-    inner_r = _n(nodes, "ShaderNodeMath", x=300, y=-500)
-    inner_r.operation = "SUBTRACT"
-    links.new(outer_r.outputs[0],           inner_r.inputs[0])
-    links.new(gi.outputs["Wall Thickness"], inner_r.inputs[1])
-
-    # ── Perfil: círculo unitario (escalado por el radio de la curva) ─────────
-    unit_circle = _n(nodes, "GeometryNodeCurvePrimitiveCircle", x=-100, y=-600)
-    _set_mode(unit_circle, "RADIUS")
-    unit_circle.inputs["Radius"].default_value = 1.0
-    links.new(gi.outputs["Resolution"], unit_circle.inputs["Resolution"])
-
-    # ── Shell exterior ────────────────────────────────────────────────────────
-    set_r_out = _n(nodes, "GeometryNodeSetCurveRadius", x=550, y=200)
-    links.new(resample.outputs["Curve"], set_r_out.inputs["Curve"])
-    links.new(outer_r.outputs[0],        set_r_out.inputs["Radius"])
-
-    ctm_out = _n(nodes, "GeometryNodeCurveToMesh", x=750, y=200)
-    ctm_out.inputs["Fill Caps"].default_value = False
-    links.new(set_r_out.outputs["Curve"],   ctm_out.inputs["Curve"])
-    links.new(unit_circle.outputs["Curve"], ctm_out.inputs["Profile Curve"])
-
-    # ── Shell interior (normales invertidas) ──────────────────────────────────
-    set_r_in = _n(nodes, "GeometryNodeSetCurveRadius", x=550, y=-100)
-    links.new(resample.outputs["Curve"], set_r_in.inputs["Curve"])
-    links.new(inner_r.outputs[0],        set_r_in.inputs["Radius"])
-
-    ctm_in = _n(nodes, "GeometryNodeCurveToMesh", x=750, y=-100)
-    ctm_in.inputs["Fill Caps"].default_value = False
-    links.new(set_r_in.outputs["Curve"],    ctm_in.inputs["Curve"])
-    links.new(unit_circle.outputs["Curve"], ctm_in.inputs["Profile Curve"])
-
-    flip_in = _n(nodes, "GeometryNodeFlipFaces", x=950, y=-100)
-    links.new(ctm_in.outputs[0], flip_in.inputs["Mesh"])
-
-    # ── Cap inferior: disco exterior ──────────────────────────────────────────
-    cap_out_curve = _n(nodes, "GeometryNodeCurvePrimitiveCircle", x=100, y=-800)
-    _set_mode(cap_out_curve, "RADIUS")
-    links.new(gi.outputs["Distal Radius"], cap_out_curve.inputs["Radius"])
-    links.new(gi.outputs["Resolution"],    cap_out_curve.inputs["Resolution"])
-
-    cap_out_fill = _n(nodes, "GeometryNodeFillCurve", x=300, y=-800)
-    links.new(cap_out_curve.outputs["Curve"], cap_out_fill.inputs["Curve"])
-
-    # ── Cap inferior: disco interior flipped (crea el hueco del cap) ─────────
-    inner_distal = _n(nodes, "ShaderNodeMath", x=100, y=-1000)
-    inner_distal.operation = "SUBTRACT"
-    links.new(gi.outputs["Distal Radius"],  inner_distal.inputs[0])
-    links.new(gi.outputs["Wall Thickness"], inner_distal.inputs[1])
-
-    cap_in_curve = _n(nodes, "GeometryNodeCurvePrimitiveCircle", x=300, y=-1000)
-    _set_mode(cap_in_curve, "RADIUS")
-    links.new(inner_distal.outputs[0],  cap_in_curve.inputs["Radius"])
-    links.new(gi.outputs["Resolution"], cap_in_curve.inputs["Resolution"])
-
-    cap_in_fill = _n(nodes, "GeometryNodeFillCurve", x=500, y=-1000)
-    links.new(cap_in_curve.outputs["Curve"], cap_in_fill.inputs["Curve"])
-
-    flip_cap = _n(nodes, "GeometryNodeFlipFaces", x=700, y=-1000)
-    links.new(cap_in_fill.outputs[0], flip_cap.inputs["Mesh"])
-
-    # ── Join + merge ──────────────────────────────────────────────────────────
-    join = _n(nodes, "GeometryNodeJoinGeometry", x=1150, y=0)
-    links.new(ctm_out.outputs[0],      join.inputs["Geometry"])
-    links.new(flip_in.outputs[0],      join.inputs["Geometry"])
-    links.new(cap_out_fill.outputs[0], join.inputs["Geometry"])
-    links.new(flip_cap.outputs[0],     join.inputs["Geometry"])
-
-    merge = _n(nodes, "GeometryNodeMergeByDistance", x=1300, y=0)
-    merge.inputs["Distance"].default_value = 0.01
-    links.new(join.outputs["Geometry"], merge.inputs["Geometry"])
-
-    links.new(merge.outputs["Geometry"], go.inputs["Geometry"])
+    grounded = _translate_z(
+        nodes, links, boolean.outputs["Mesh"], neg_min_z.outputs[0], x=950, y=0
+    )
+    links.new(grounded, go.inputs["Geometry"])

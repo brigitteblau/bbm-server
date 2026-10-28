@@ -46,3 +46,25 @@ def test_endpoint_rechaza_lado_invalido():
     payload = {**MAX_PAYLOAD, "limb_side": "center"}
     response = client.post("/prosthesis/socket/parameters", json=payload)
     assert response.status_code == 422
+
+
+def test_request_sin_user_id_da_422():
+    response = client.post("/prosthesis/requests", json=MAX_PAYLOAD)
+    assert response.status_code == 422
+
+
+def test_request_con_geometria_invalida_da_422():
+    payload = {
+        **MAX_PAYLOAD,
+        "user_id": "eec346a3-8425-4e56-b077-48f733cf59e1",
+        "distal_circumference_cm": 30,
+    }
+    response = client.post("/prosthesis/requests", json=payload)
+    assert response.status_code == 422
+
+
+def test_errores_422_tienen_shape_de_fastapi():
+    response = client.post("/prosthesis/requests", json=MAX_PAYLOAD)
+    error = response.json()["detail"][0]
+    assert error["loc"] == ["body", "user_id"]
+    assert "user_id" in error["msg"]

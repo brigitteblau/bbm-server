@@ -19,7 +19,7 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     # Previews de Vercel del front (hunda-<hash>.vercel.app) y artifacts de Claude
     # (front de prueba), que se sirven desde subdominios dinámicos.
-    allow_origin_regex=r"https://(hunda[a-z0-9-]*\.vercel\.app|.*\.(claudeusercontent\.com|claude\.site))",
+    allow_origin_regex=r"https://(hunda[a-z0-9-]*\.vercel\.app|[a-z0-9-]+(\.[a-z0-9-]+)*\.(claudeusercontent\.com|claude\.site))",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
