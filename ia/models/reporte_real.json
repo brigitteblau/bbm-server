@@ -1,0 +1,39 @@
+{
+  "validacion": "GroupKFold(5) por raza",
+  "elegido": "gradient_boosting",
+  "resultados": {
+    "espejo (sin IA)": {
+      "MAE_U": 0.1794,
+      "mediana_U": 0.1397,
+      "p90_U": 0.3717,
+      "MAE_cm_pata_30cm": 5.38
+    },
+    "lineal": {
+      "MAE_U": 0.1351,
+      "mediana_U": 0.1128,
+      "p90_U": 0.2764,
+      "MAE_cm_pata_30cm": 4.05
+    },
+    "ridge": {
+      "MAE_U": 0.1351,
+      "mediana_U": 0.1128,
+      "p90_U": 0.2764,
+      "MAE_cm_pata_30cm": 4.05
+    },
+    "red_neuronal": {
+      "MAE_U": 0.1291,
+      "mediana_U": 0.1033,
+      "p90_U": 0.2698,
+      "MAE_cm_pata_30cm": 3.87
+    },
+    "gradient_boosting": {
+      "MAE_U": 0.1262,
+      "mediana_U": 0.0999,
+      "p90_U": 0.2654,
+      "MAE_cm_pata_30cm": 3.79
+    }
+  },
+  "n_filas": 11932,
+  "n_fotos": 5021,
+  "n_razas": 111
+}

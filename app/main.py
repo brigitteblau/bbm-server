@@ -1,3 +1,5 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routes.prosthesis import router as prosthesis_router
@@ -36,3 +38,12 @@ def health():
     return {"status": "ok"}
 
 app.include_router(prosthesis_router, prefix="/prosthesis", tags=["prosthesis"])
+
+# IA opcional (requirements-ia.txt). Sin esas dependencias el server levanta igual,
+# como pasa con Blender: los endpoints /ia simplemente no se montan.
+try:
+    from app.routes.ia import router as ia_router
+
+    app.include_router(ia_router, prefix="/ia", tags=["ia"])
+except (ImportError, RuntimeError) as exc:  # RuntimeError: falta python-multipart
+    logging.getLogger(__name__).info("Endpoints de IA deshabilitados: %s", exc)

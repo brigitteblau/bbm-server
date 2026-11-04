@@ -1,0 +1,9 @@
+# Dependencias OPCIONALES para los endpoints /ia (detector de puntos + predicción de la pata).
+# El server funciona sin esto. Instalar con:  pip install -r requirements.txt -r requirements-ia.txt
+python-multipart
+scikit-learn==1.9.1   # ia/models/modelo_real.joblib se guardó con esta versión
+pandas
+joblib
+opencv-contrib-python-headless
+ultralytics
+pillow

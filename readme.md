@@ -110,14 +110,27 @@ Funciona si `generate` devuelve `"generator_used": "blender-gn-v1"` y `"fallback
 
 El socket es un vaso cónico: cono exterior menos cono interior (Mesh Boolean exacto). Sale cerrado (watertight), con la base en z=0, el fondo y la pared del espesor que da el peso y la boca abierta arriba. Por ahora no incluye el conector. Cada generación tarda unos 0.1 s y el proceso llega a unos 255 MB de RAM con Blender cargado.
 
+## IA: de la foto a la pata que falta (opcional)
+
+Endpoints en `/ia` para medir al perro desde una foto y predecir cuánto tiene que medir la pata que falta. Usa un detector de puntos (YOLO-pose) y un modelo entrenado con 11.932 patas reales de 111 razas. Error típico de ±3,8 cm en una pata de 30 cm, contra 5,4 cm si se copia la pata sana.
+
+```bash
+pip install -r requirements.txt -r requirements-ia.txt
+```
+
+Sin esas dependencias el server levanta igual y `/ia` no se monta. Todo el detalle (datos, modelos, resultados y límites) está en [ia/README.md](ia/README.md).
+
 ## Estructura
 
 ```
 app/
   main.py              app FastAPI + CORS
   routes/prosthesis.py endpoints
+  routes/ia.py         endpoints de IA (opcionales)
   services/            medidas → parámetros, generadores de STL
+  services/ia/         detector de puntos, medición por foto, predicción
   supabase_client.py   cliente lazy
+ia/                    modelos, dataset, entrenamiento y fotos de ejemplo de la IA
 scripts/               generación y subida de modelos base
 docs/                  documentación de la API (HTML)
 tests/
