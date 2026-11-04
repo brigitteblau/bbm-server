@@ -1,3 +1,5 @@
+import logging
+import time
 from pathlib import Path
 from uuid import UUID
 
@@ -14,6 +16,8 @@ from app.models import (
 from app.services.socket_parameters import SocketParameterGenerator
 from app.services.generators import selector
 from app.supabase_client import supabase
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -160,14 +164,7 @@ def generate_from_request(request_id: UUID):
 
     # 5. Subir a Supabase y registrar el modelo
     try:
-        supabase.storage.from_(GENERATED_BUCKET).upload(
-            filename,
-            stl_bytes,
-            {
-                "content-type": "model/stl",
-                "upsert": "false",
-            },
-        )
+        _upload_stl(filename, stl_bytes)
 
         download_url = _signed_url(filename)
         record = _insert_record(
@@ -215,6 +212,32 @@ def download_generated_model(filename: str):
             status_code=404,
             detail=f"STL no encontrado: {exc}",
         ) from exc
+
+
+def _upload_stl(filename: str, stl_bytes: bytes, attempts: int = 3) -> None:
+    """Sube el STL reintentando si se corta (timeouts de red entre Render y Supabase).
+
+    Los reintentos usan upsert: si el intento anterior llegó a escribir el archivo
+    pero se cortó la respuesta, no falla por "Duplicate". El nombre lleva un uuid,
+    así que no hay riesgo de pisar el STL de otro perro.
+    """
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            supabase.storage.from_(GENERATED_BUCKET).upload(
+                filename,
+                stl_bytes,
+                {
+                    "content-type": "model/stl",
+                    "upsert": "true" if attempt else "false",
+                },
+            )
+            return
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("Subida del STL falló (intento %s/%s): %s", attempt + 1, attempts, exc)
+            time.sleep(1 + attempt)
+    raise last_exc
 
 
 def _validation_error(
