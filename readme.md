@@ -114,7 +114,8 @@ Funciona si `generate` devuelve `"generator_used": "blender-gn-v2-bota"` y `"fal
 |---|---|---|
 | Pie, talón y puntera | 3 elipsoides (UV Sphere + Transform) unidos | escala del pie = radio proximal / 28.5 mm (acotada a 0.5–2) |
 | Socket | tubo de sección elíptica: Cone, Mesh Boolean | radios proximal y distal **+ espesor de pared** (según el peso) |
-| Cavidad del muñón | cono restado al tubo | radios y **largo del muñón exactos** |
+| Cavidad del muñón | cono restado al tubo | radios y **largo del muñón exactos + 3 mm para la media** (alrededor y en la punta) |
+| Boca en embudo | puño de la pared y cavidad que se abren 4 mm en los últimos ~15 mm | facilita meter la pata; las ventanas no lo tocan |
 | Ventanas de ventilación | 3 pares de ranuras restadas a la pared | ubicadas relativas al largo del muñón; si el muñón es muy corto, se omiten |
 | Surcos de dedos | 3 ranuras que solo cortan la cáscara (1.5 mm) | escalan con el pie |
 | Dibujo de suela | ranuras transversales de 1.3 mm, lejos del borde | escalan con el pie |
@@ -123,7 +124,8 @@ Funciona si `generate` devuelve `"generator_used": "blender-gn-v2-bota"` y `"fal
 
 - Los booleanos usan el solver `MANIFOLD` (Blender 4.5+): cada bota tarda ~1 s, sale cerrada (watertight), apoyada en z=0, y pesa ~0.4 MB (el modelo base escalado pesa ~6 MB).
 - Las piezas se superponen a propósito, sin caras en el mismo plano, para que el booleano no deje caras degeneradas. Al exportar se descartan astillas sueltas, igual que en `make_base_models.py`.
-- Las medidas del muñón (radios y pared) quedan como **inputs del grupo de nodos**, así se pueden tocar a mano desde el panel del modifier en Blender.
+- **Media / liner:** la cavidad deja `LINER_MM = 3` mm de más para una media de silicona o neopreno. Hace más fácil ponerla y sacarla, amortigua y evita roces. Si la media que usan es más gruesa o más fina, se cambia esa constante (o el input `Liner Thickness`).
+- Las medidas del muñón (radios, pared y media) quedan como **inputs del grupo de nodos**, así se pueden tocar a mano desde el panel del modifier en Blender.
 - Diferencias con el script SDF: las uniones son en ángulo (el SDF las suaviza) y no tiene la línea de partición de la valva superior ni el balancín de la punta.
 - `tests/test_blender_bota.py` prueba el diseño siempre y genera botas reales cuando `bpy` está instalado.
 

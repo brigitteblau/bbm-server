@@ -5,7 +5,9 @@ puntera, socket ventilado, surcos de dedos y dibujo de suela), pero como un
 grafo de Geometry Nodes con primitivas y booleanos, y con las medidas reales
 de cada perro:
 
-  - Cavidad del socket: radios proximal/distal y largo del muñón exactos.
+  - Cavidad del socket: radios proximal/distal y largo del muñón exactos,
+    más el espacio para la media/liner que se le pone al perro.
+  - Boca en embudo: el borde se abre hacia afuera para que la pata entre guiada.
   - Pared: el espesor que da el peso (socket_parameters.py).
   - Pie: escalado según el radio proximal (el modelo base es para 28.5 mm).
   - Trasera: el tubo del socket inclinado 11° hacia atrás.
@@ -46,6 +48,13 @@ TREAD_PITCH, TREAD_WIDTH, TREAD_DEPTH = 9.0, 3.0, 1.3
 # ángulo 0 = lateral (+X). Van de a pares, separadas por un travesaño.
 VENTS = ((-28.0, 0.76, 0.27), (-28.0, 0.44, 0.22), (180.0 + 28.0, 0.61, 0.25))
 VENT_WIDTH, VENT_PAIR_OFFSET = 6.2, 5.6
+# Media/liner: el perro se pone una media de silicona o neopreno y la cavidad
+# deja ese espacio de más (alrededor y abajo). Facilita ponerla y amortigua.
+LINER_MM = 3.0
+# Boca en embudo: en los últimos FUNNEL_HEIGHT mm la boca se abre FUNNEL_FLARE mm
+# hacia afuera (cavidad y pared), como el puño de una bota.
+FUNNEL_HEIGHT_MAX, FUNNEL_HEIGHT_FRAC = 15.0, 0.2
+FUNNEL_FLARE_MM = 4.0
 
 SPHERE_SEGMENTS, SPHERE_RINGS = 64, 32
 # MANIFOLD (Blender 4.5+) es mucho más rápido que EXACT y da mallas cerradas
@@ -70,6 +79,7 @@ def design(params: SocketParameters) -> dict:
     s = min(max(proximal / BASE_PROXIMAL_RADIUS, lo), hi)
     cavity_bottom = CAVITY_BOTTOM * s
     stump = params.height_cm * CM_TO_MM
+    depth = stump + LINER_MM                 # la media también cubre la punta del muñón
     return {
         "foot_scale": round(s, 4),
         "proximal_radius_mm": proximal,
@@ -77,7 +87,11 @@ def design(params: SocketParameters) -> dict:
         "wall_thickness_mm": params.wall_thickness_cm * CM_TO_MM,
         "stump_length_mm": stump,
         "cavity_bottom_mm": cavity_bottom,
-        "top_mm": cavity_bottom + stump,
+        "liner_mm": LINER_MM,
+        "cavity_depth_mm": depth,
+        "funnel_height_mm": min(FUNNEL_HEIGHT_MAX, FUNNEL_HEIGHT_FRAC * stump),
+        "funnel_flare_mm": FUNNEL_FLARE_MM,
+        "top_mm": cavity_bottom + depth,
         "hind": params.limb_position == "trasera",
         "mirrored": params.limb_side == "izquierda",
     }
@@ -249,13 +263,16 @@ def _build_boot(ng, d: dict) -> None:
     iface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
     for name, key in (("Proximal Radius", "proximal_radius_mm"),
                       ("Distal Radius", "distal_radius_mm"),
-                      ("Wall Thickness", "wall_thickness_mm")):
+                      ("Wall Thickness", "wall_thickness_mm"),
+                      ("Liner Thickness", "liner_mm")):
         sock = iface.new_socket(name, in_out="INPUT", socket_type="NodeSocketFloat")
         sock.default_value = d[key]
     gi = g.nodes.new("NodeGroupInput")
     go = g.nodes.new("NodeGroupOutput")
-    proximal, distal, wall = (gi.outputs["Proximal Radius"], gi.outputs["Distal Radius"],
-                              gi.outputs["Wall Thickness"])
+    wall, liner = gi.outputs["Wall Thickness"], gi.outputs["Liner Thickness"]
+    # Radios de la cavidad = muñón + media
+    proximal = g.math("ADD", gi.outputs["Proximal Radius"], liner)
+    distal = g.math("ADD", gi.outputs["Distal Radius"], liner)
 
     z_cav, z_top = d["cavity_bottom_mm"], d["top_mm"]
     z_tube = TUBE_BOTTOM * s
@@ -268,17 +285,36 @@ def _build_boot(ng, d: dict) -> None:
     outer_top = g.math("ADD", proximal, wall)
     # Las piezas se superponen (nunca caras en el mismo plano): si no, el
     # booleano deja caras degeneradas y la malla no queda cerrada.
+    depth = d["cavity_depth_mm"]
+    slope = (d["proximal_radius_mm"] - d["distal_radius_mm"]) / max(depth, 1.0)
+    h, flare = d["funnel_height_mm"], d["funnel_flare_mm"]
+    z_f = z_top - h                                   # donde arranca el embudo
+
+    def at(radius, z, extra=0.0):
+        """Radio del cono (socket de Blender) a la altura z, + extra."""
+        return g.math("ADD", radius, slope * (z - z_cav) + extra)
+
+    # Embudo de afuera: un puño que se abre `flare` mm en el borde.
+    # Arranca 2 mm más abajo y 0.3 mm más adentro para no compartir caras.
+    cuff = g.frustum(z_f - 2.0, z_top, at(outer_bottom, z_f - 2.0, -0.3),
+                     g.math("ADD", outer_top, flare))
     tube = g.boolean(
         "UNION",
         g.frustum(z_tube, z_cav + 3.0, outer_bottom, outer_bottom),
-        g.frustum(z_cav, z_top, outer_bottom, outer_top),
+        g.frustum(z_cav, z_top - 0.5, outer_bottom, at(outer_bottom, z_top - 0.5)),
+        cuff,
     )
-    # Cavidad: medidas exactas del muñón. Sigue el mismo cono 20 mm más arriba
-    # del borde para abrir la boca sin caras coplanares.
+    # Cavidad: muñón + media. Sigue 20 mm por arriba del borde para abrir la
+    # boca sin caras coplanares; el embudo la ensancha en los últimos h mm.
     extra = 20.0
-    slope = (d["proximal_radius_mm"] - d["distal_radius_mm"]) / max(d["stump_length_mm"], 1.0)
-    cavity = g.frustum(z_cav, z_top + extra, distal,
-                       g.math("ADD", proximal, slope * extra))
+    # UNION y no join: dos piezas superpuestas en un solo mesh confunden al
+    # booleano (la zona en común se cuenta doble y la boca quedaba tapada).
+    cavity = g.boolean(
+        "UNION",
+        g.frustum(z_cav, z_top + extra, distal, at(distal, z_top + extra)),
+        g.frustum(z_f - 2.0, z_top + extra, at(distal, z_f - 2.0, -0.3),
+                  at(distal, z_top + extra, flare * (h + extra) / h)),
+    )
     vents = _vents(g, d)
 
     if d["hind"]:
@@ -326,22 +362,31 @@ def _build_boot(ng, d: dict) -> None:
 def _vents(g: _Graph, d: dict):
     """Ventanas de a pares en la pared del socket, ubicadas relativas a la cavidad."""
     z_cav, stump = d["cavity_bottom_mm"], d["stump_length_mm"]
-    r_mid = (d["distal_radius_mm"] + d["proximal_radius_mm"]) / 2 + d["wall_thickness_mm"] / 2
+    r_mid = ((d["distal_radius_mm"] + d["proximal_radius_mm"]) / 2 + d["liner_mm"]
+             + d["wall_thickness_mm"] / 2)
+    top_margin = d["funnel_height_mm"] + 4.0        # las ventanas no tocan el embudo
     depth = d["wall_thickness_mm"] * 4 + 4.0      # atraviesa la pared, no llega al otro lado
     cutters = []
+    # Tramo útil de la pared: 6 mm sobre el fondo y por debajo del embudo.
+    # Las ventanas se reparten proporcionalmente ahí, así nunca se pisan entre sí.
+    lo, hi = z_cav + 6.0, z_cav + stump - top_margin
+    usable = hi - lo
+    if usable < 20.0:
+        return _nothing(g)                          # muñón muy corto: sin ventanas
     for angle_deg, frac, rel_len in VENTS:
-        length = max(rel_len * stump, 8.0)
-        zc = z_cav + frac * stump
-        # que no se salga de la cavidad (deja 6 mm de borde arriba y abajo)
-        zc = min(max(zc, z_cav + 6 + length / 2), z_cav + stump - 6 - length / 2)
-        if length > stump - 12:
-            continue                                # muñón muy corto: sin esta ventana
+        length = rel_len * usable
+        zc = lo + frac * usable
+        if length < 6.0:
+            continue
         a = math.radians(angle_deg)
         for off in (-VENT_PAIR_OFFSET, VENT_PAIR_OFFSET):
             x = r_mid * math.cos(a) - off * math.sin(a)
             y = ELL_Y * r_mid * math.sin(a) + off * math.cos(a)
             cutters.append(g.box((depth, VENT_WIDTH, length), translation=(x, y, zc),
                                  rotation=(0, 0, a)))
-    if not cutters:
-        return g.box((0.01, 0.01, 0.01), translation=(0, 0, -1000))   # nada que cortar
-    return g.join(*cutters)
+    return g.join(*cutters) if cutters else _nothing(g)
+
+
+def _nothing(g: _Graph):
+    """Un cubito lejísimo: 'nada que cortar' sin romper el booleano."""
+    return g.box((0.01, 0.01, 0.01), translation=(0, 0, -1000))

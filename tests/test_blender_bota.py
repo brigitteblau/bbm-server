@@ -26,7 +26,7 @@ def test_diseno_usa_las_medidas_del_perro():
     assert d["proximal_radius_mm"] == pytest.approx(28.6)
     assert d["distal_radius_mm"] == pytest.approx(20.7)
     assert d["stump_length_mm"] == 90
-    assert d["top_mm"] == pytest.approx(d["cavity_bottom_mm"] + 90)
+    assert d["top_mm"] == pytest.approx(d["cavity_bottom_mm"] + 90 + d["liner_mm"])
     assert d["foot_scale"] == pytest.approx(28.6 / 28.5, abs=1e-3)
 
 
@@ -53,4 +53,12 @@ def test_genera_bota_cerrada(pos, side):
     assert r["algorithm_version"] == "blender-gn-v2-bota"
     assert mesh.is_watertight                       # imprimible
     assert mesh.bounds[0][2] == pytest.approx(0, abs=0.05)   # apoyada en el suelo
-    assert mesh.extents[2] == pytest.approx(150, abs=6)      # 60 mm de pie + 90 de muñón
+    assert mesh.extents[2] == pytest.approx(153, abs=6)      # 60 de pie + 90 de muñón + 3 de media
+
+
+def test_deja_lugar_para_la_media_y_embudo():
+    p, _ = _params()
+    d = blender_gn.design(p)
+    assert d["liner_mm"] == blender_gn.LINER_MM > 0
+    assert 0 < d["funnel_height_mm"] <= 15
+    assert d["funnel_flare_mm"] > 0
