@@ -1,5 +1,6 @@
 """Fallback: escala un STL default (front/back) a las medidas del perro."""
 
+from functools import lru_cache
 from io import BytesIO
 from uuid import uuid4
 
@@ -26,9 +27,18 @@ DEFAULT_STL_BY_POSITION = {
 }
 
 
+@lru_cache(maxsize=4)
+def _base_model_bytes(base_filename: str) -> bytes:
+    """Los modelos base (~6 MB) casi nunca cambian: se bajan una vez por proceso.
+
+    Si se suben modelos base nuevos, hay que reiniciar el server (o redeployar).
+    """
+    return supabase.storage.from_(BASE_MODELS_BUCKET).download(base_filename)
+
+
 def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     base_filename = DEFAULT_STL_BY_POSITION[params.limb_position]
-    file_bytes = supabase.storage.from_(BASE_MODELS_BUCKET).download(base_filename)
+    file_bytes = _base_model_bytes(base_filename)
 
     mesh = trimesh.load_mesh(BytesIO(file_bytes), file_type="stl")
     if mesh.is_empty:
