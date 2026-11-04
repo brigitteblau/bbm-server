@@ -1,7 +1,8 @@
 """Decide qué generador usar. El cliente no elige: el back sabe.
 
-Política: Blender si está disponible y los parámetros son válidos;
+Política: Blender siempre que bpy esté instalado (no hace falta prenderlo);
 si falla o no está, fallback a escalar el STL default con trimesh.
+BLENDER_ENABLED=false lo apaga a mano (por ejemplo, para comparar).
 """
 
 import logging
@@ -28,7 +29,8 @@ def validate_geometry(params: SocketParameters) -> list[str]:
 
 
 def _blender_enabled() -> bool:
-    return os.getenv("BLENDER_ENABLED", "false").lower() == "true"
+    # Prendido por defecto: decide si bpy está instalado. Solo "false" lo apaga.
+    return os.getenv("BLENDER_ENABLED", "true").lower() != "false"
 
 
 def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
@@ -36,7 +38,7 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     fallback_reason = None
 
     if not _blender_enabled():
-        fallback_reason = "Blender deshabilitado por configuración (BLENDER_ENABLED)"
+        fallback_reason = "Blender apagado a mano (BLENDER_ENABLED=false)"
     elif not blender_gn.is_available():
         fallback_reason = "bpy no está instalado en este entorno"
     else:

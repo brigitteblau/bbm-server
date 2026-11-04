@@ -1,7 +1,18 @@
-"""Generador paramétrico con Blender Geometry Nodes.
+"""Generador paramétrico con Blender Geometry Nodes: la bota completa.
 
-Genera el socket desde cero (cono hueco con espesor real).
-IMPORTANTE: bpy se importa adentro de la función, así el server
+Arma desde cero la misma bota que scripts/make_base_models.py (pie, talón,
+puntera, socket ventilado, surcos de dedos y dibujo de suela), pero como un
+grafo de Geometry Nodes con primitivas y booleanos, y con las medidas reales
+de cada perro:
+
+  - Cavidad del socket: radios proximal/distal y largo del muñón exactos.
+  - Pared: el espesor que da el peso (socket_parameters.py).
+  - Pie: escalado según el radio proximal (el modelo base es para 28.5 mm).
+  - Trasera: el tubo del socket inclinado 11° hacia atrás.
+  - Izquierda: espejado en X.
+
+Unidades: mm. Perro mirando a +Y, Z arriba, pata DERECHA como referencia.
+IMPORTANTE: bpy se importa adentro de las funciones, así el server
 levanta aunque bpy no esté instalado.
 """
 
@@ -14,8 +25,33 @@ from app.models import ProsthesisForm, SocketParameters
 from app.utils import safe_filename_part
 
 CM_TO_MM = 10.0
-DEFAULT_RESOLUTION = 64
-ALGORITHM_VERSION = "blender-gn-v1"
+ALGORITHM_VERSION = "blender-gn-v2-bota"
+
+# ── Diseño base (mm), igual que scripts/make_base_models.py ──────────────────
+BASE_PROXIMAL_RADIUS = 28.5          # boca interna del socket del modelo base
+FOOT_SCALE_LIMITS = (0.5, 2.0)
+ELL_Y = 0.9                          # sección del socket aplastada adelante-atrás
+CAVITY_BOTTOM = 60.0                 # altura del fondo de la cavidad (escala con el pie)
+TUBE_BOTTOM = 30.0                   # donde arranca el tubo, adentro del pie
+HIND_TILT_DEG = 11.0                 # trasera: el tubo se inclina hacia atrás
+HIND_PIVOT_Z = 45.0
+# (centro, radios) de los elipsoides del pie
+FOOT = ((1.5, 30.0, 24.0), (29.0, 57.0, 27.0))
+HEEL = ((0.0, -8.0, 33.0), (27.5, 28.0, 33.0))
+TOE_BOX = ((1.5, 56.0, 15.0), (31.0, 30.0, 19.0))
+TOE_GROOVE_ANGLES = (-0.30, -0.02, 0.27)   # rad, desde el empeine hacia +Y
+TOE_GROOVE_DEPTH = 1.5
+TREAD_PITCH, TREAD_WIDTH, TREAD_DEPTH = 9.0, 3.0, 1.3
+# Ventanas de ventilación: (ángulo, posición en la cavidad 0..1, largo relativo)
+# ángulo 0 = lateral (+X). Van de a pares, separadas por un travesaño.
+VENTS = ((-28.0, 0.76, 0.27), (-28.0, 0.44, 0.22), (180.0 + 28.0, 0.61, 0.25))
+VENT_WIDTH, VENT_PAIR_OFFSET = 6.2, 5.6
+
+SPHERE_SEGMENTS, SPHERE_RINGS = 64, 32
+# MANIFOLD (Blender 4.5+) es mucho más rápido que EXACT y da mallas cerradas
+# si las entradas son cerradas (todas las primitivas de acá lo son).
+BOOLEAN_SOLVER = "MANIFOLD"
+TUBE_VERTICES = 64
 
 
 def is_available() -> bool:
@@ -26,17 +62,31 @@ def is_available() -> bool:
         return False
 
 
+def design(params: SocketParameters) -> dict:
+    """Medidas del perro (cm) -> dimensiones de la bota (mm). Sin Blender: se puede testear."""
+    proximal = params.top_radius_cm * CM_TO_MM
+    distal = params.bottom_radius_cm * CM_TO_MM
+    lo, hi = FOOT_SCALE_LIMITS
+    s = min(max(proximal / BASE_PROXIMAL_RADIUS, lo), hi)
+    cavity_bottom = CAVITY_BOTTOM * s
+    stump = params.height_cm * CM_TO_MM
+    return {
+        "foot_scale": round(s, 4),
+        "proximal_radius_mm": proximal,
+        "distal_radius_mm": distal,
+        "wall_thickness_mm": params.wall_thickness_cm * CM_TO_MM,
+        "stump_length_mm": stump,
+        "cavity_bottom_mm": cavity_bottom,
+        "top_mm": cavity_bottom + stump,
+        "hind": params.limb_position == "trasera",
+        "mirrored": params.limb_side == "izquierda",
+    }
+
+
 def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     import bpy  # lazy: solo si de verdad vamos a usar Blender
 
-    # Única conversión de unidades: SocketParameters viene en cm, acá pasamos a mm
-    gn_params = {
-        "Stump Length":    params.height_cm * CM_TO_MM,
-        "Proximal Radius": params.top_radius_cm * CM_TO_MM,
-        "Distal Radius":   params.bottom_radius_cm * CM_TO_MM,
-        "Wall Thickness":  params.wall_thickness_cm * CM_TO_MM,
-        "Resolution":      DEFAULT_RESOLUTION,
-    }
+    d = design(params)
 
     bpy.ops.wm.read_factory_settings(use_empty=True)
 
@@ -47,19 +97,16 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
     obj.select_set(True)
 
     mod = obj.modifiers.new("GeometryNodes", "NODES")
-    ng = bpy.data.node_groups.new("ProsthesisSocketGN", "GeometryNodeTree")
+    ng = bpy.data.node_groups.new("HundaBotaGN", "GeometryNodeTree")
 
-    # IMPORTANTE: construir la interfaz y el grafo de nodos ANTES de asignar
-    # ng al modifier. Si se asigna primero (como estaba antes), Blender crea
-    # los inputs del modifier (Socket_1, Socket_2, ...) en 0 y no los
-    # resincroniza con los default_value de la interfaz creados después,
-    # por lo que el socket quedaba con Stump Length/Radios/Resolution = 0
-    # y exportaba una malla vacía (STL de 84 bytes, 0 triángulos).
-    _build_gn(ng, gn_params)
+    # IMPORTANTE: construir la interfaz y el grafo ANTES de asignar ng al
+    # modifier. Si se asigna primero, Blender crea los inputs del modifier en 0
+    # y no los resincroniza con los default_value (exportaba una malla vacía).
+    _build_boot(ng, d)
     mod.node_group = ng
 
-    # Espejado para pata izquierda (los defaults se modelan como derecha)
-    if params.limb_side == "izquierda":
+    # Espejado para pata izquierda (el diseño es de la derecha)
+    if d["mirrored"]:
         obj.scale[0] = -1.0
 
     bpy.ops.object.transform_apply(scale=True)
@@ -74,7 +121,7 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
             export_selected_objects=True,
             apply_modifiers=True,
         )
-        stl_bytes = Path(tmp_path).read_bytes()
+        stl_bytes = _largest_body(Path(tmp_path).read_bytes())
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -82,127 +129,214 @@ def generate(params: SocketParameters, form: ProsthesisForm) -> dict:
         "generated_filename": f"{safe_filename_part(params.dog_name)}-{uuid4()}.stl",
         "generated_stl_bytes": stl_bytes,
         "generation_parameters": {
-            "stump_length_mm":    gn_params["Stump Length"],
-            "proximal_radius_mm": gn_params["Proximal Radius"],
-            "distal_radius_mm":   gn_params["Distal Radius"],
-            "wall_thickness_mm":  gn_params["Wall Thickness"],
+            **{k: (round(v, 2) if isinstance(v, float) else v) for k, v in d.items()},
             "connector_radius_mm": params.connector_radius_cm * CM_TO_MM,
-            "resolution":         gn_params["Resolution"],
-            "mirrored":           params.limb_side == "izquierda",
         },
         "algorithm_version": ALGORITHM_VERSION,
     }
 
 
-def _n(nodes, node_type: str, x: int = 0, y: int = 0):
-    n = nodes.new(node_type)
-    n.location = (x, y)
-    return n
+def _largest_body(stl_bytes: bytes) -> bytes:
+    """Descarta astillas sueltas que pueden quedar de los booleanos (igual que
+    make_base_models.py): nos quedamos con la pieza más grande."""
+    from io import BytesIO
+
+    import trimesh
+
+    mesh = trimesh.load_mesh(BytesIO(stl_bytes), file_type="stl")
+    parts = mesh.split(only_watertight=False)
+    if len(parts) > 1:
+        mesh = max(parts, key=lambda m: len(m.faces))
+    out = BytesIO()
+    mesh.export(file_obj=out, file_type="stl")
+    return out.getvalue()
 
 
-def _math(nodes, links, operation: str, a, b, x: int = 0, y: int = 0):
-    n = _n(nodes, "ShaderNodeMath", x=x, y=y)
-    n.operation = operation
-    links.new(a, n.inputs[0])
-    links.new(b, n.inputs[1])
-    return n.outputs[0]
+# ── Helpers de nodos ──────────────────────────────────────────────────────────
+class _Graph:
+    """Envoltorio chico para crear nodos y conectarlos sin repetir código."""
+
+    def __init__(self, ng):
+        self.nodes = ng.nodes
+        self.links = ng.links
+        self.y = 0
+
+    def node(self, node_type: str, **inputs):
+        n = self.nodes.new(node_type)
+        n.location = (0, self.y)
+        self.y -= 220
+        for name, value in inputs.items():
+            sock = n.inputs[name.replace("_", " ")]
+            if hasattr(value, "is_output"):          # un socket: se conecta
+                self.links.new(value, sock)
+            else:                                     # un valor: se fija
+                sock.default_value = value
+        return n
+
+    def math(self, op: str, a, b):
+        n = self.nodes.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if hasattr(v, "is_output"):
+                self.links.new(v, n.inputs[i])
+            else:
+                n.inputs[i].default_value = v
+        return n.outputs[0]
+
+    def transform(self, geo, translation=(0, 0, 0), rotation=(0, 0, 0), scale=(1, 1, 1)):
+        return self.node("GeometryNodeTransform", Geometry=geo, Translation=translation,
+                         Rotation=rotation, Scale=scale).outputs["Geometry"]
+
+    def join(self, *geos):
+        n = self.nodes.new("GeometryNodeJoinGeometry")
+        for g in geos:
+            self.links.new(g, n.inputs["Geometry"])
+        return n.outputs["Geometry"]
+
+    def boolean(self, op: str, mesh1, *others):
+        n = self.nodes.new("GeometryNodeMeshBoolean")
+        n.operation = op
+        n.solver = BOOLEAN_SOLVER
+        if op == "DIFFERENCE":
+            self.links.new(mesh1, n.inputs["Mesh 1"])
+            targets = others
+        else:
+            targets = (mesh1, *others)
+        for g in targets:
+            self.links.new(g, n.inputs["Mesh 2"])
+        return n.outputs["Mesh"]
+
+    def ellipsoid(self, center, radii, shrink=0.0):
+        sphere = self.node("GeometryNodeMeshUVSphere", Segments=SPHERE_SEGMENTS,
+                           Rings=SPHERE_RINGS, Radius=1.0).outputs["Mesh"]
+        r = tuple(max(v - shrink, 0.5) for v in radii)
+        return self.transform(sphere, translation=center, scale=r)
+
+    def box(self, size, translation=(0, 0, 0), rotation=(0, 0, 0)):
+        cube = self.node("GeometryNodeMeshCube", Size=size).outputs["Mesh"]
+        return self.transform(cube, translation=translation, rotation=rotation)
+
+    def frustum(self, z0, z1, r_bottom, r_top):
+        """Cono truncado entre z0 y z1 (radios pueden ser sockets), sección elíptica."""
+        depth = z1 - z0
+        cone = self.node("GeometryNodeMeshCone", Vertices=TUBE_VERTICES,
+                         Radius_Bottom=r_bottom, Radius_Top=r_top, Depth=depth)
+        cone.fill_type = "NGON"
+        # En Blender 5.x el primitivo Cone arranca en z=0 (no centrado): lo subimos a z0
+        return self.transform(cone.outputs["Mesh"], translation=(0, 0, z0),
+                              scale=(1, ELL_Y, 1))
 
 
-def _translate_z(nodes, links, geometry, z, x: int = 0, y: int = 0):
-    shift = _n(nodes, "ShaderNodeCombineXYZ", x=x, y=y - 200)
-    links.new(z, shift.inputs["Z"])
-
-    move = _n(nodes, "GeometryNodeTransform", x=x, y=y)
-    links.new(geometry, move.inputs["Geometry"])
-    links.new(shift.outputs["Vector"], move.inputs["Translation"])
-    return move.outputs["Geometry"]
+def _scaled(spec, s):
+    (c, r) = spec
+    return tuple(v * s for v in c), tuple(v * s for v in r)
 
 
-def _cone(nodes, links, gi, radius_bottom, radius_top, x: int = 0, y: int = 0):
-    """Cono con tapas, de alto Stump Length."""
-    cone = _n(nodes, "GeometryNodeMeshCone", x=x, y=y)
-    cone.fill_type = "NGON"
-    links.new(gi.outputs["Resolution"],   cone.inputs["Vertices"])
-    links.new(gi.outputs["Stump Length"], cone.inputs["Depth"])
-    links.new(radius_bottom,              cone.inputs["Radius Bottom"])
-    links.new(radius_top,                 cone.inputs["Radius Top"])
-    return cone.outputs["Mesh"]
+def _build_boot(ng, d: dict) -> None:
+    """Grafo de la bota. Las medidas del muñón son inputs del grupo (se ven y
+    se pueden tocar en el panel del modifier en Blender)."""
+    g = _Graph(ng)
+    g.nodes.clear()
+    s = d["foot_scale"]
 
-
-def _build_gn(ng, params: dict) -> None:
-    """
-    Construye el node graph dentro de ng.
-
-    Geometría: vaso cónico (socket de prótesis) = cono exterior − cono interior.
-      - Exterior: de Distal Radius (z=0) a Proximal Radius (z=Stump Length)
-      - Interior: el mismo cono corrido Wall Thickness hacia adentro y hacia
-        arriba, así el fondo queda con el mismo espesor que la pared
-      - Top abierto: el interior sobresale por arriba y el boolean abre la boca
-    El boolean exacto deja una malla cerrada (watertight), lista para imprimir.
-    """
-    nodes = ng.nodes
-    links = ng.links
-    nodes.clear()
-
-    # ── Sockets de entrada/salida ────────────────────────────────────────────
+    # ── Interfaz: medidas del perro ──────────────────────────────────────────
     iface = ng.interface
     iface.new_socket("Geometry", in_out="OUTPUT", socket_type="NodeSocketGeometry")
-    s = iface.new_socket("Stump Length",    in_out="INPUT", socket_type="NodeSocketFloat")
-    s.default_value = params["Stump Length"]
-    s = iface.new_socket("Proximal Radius", in_out="INPUT", socket_type="NodeSocketFloat")
-    s.default_value = params["Proximal Radius"]
-    s = iface.new_socket("Distal Radius",   in_out="INPUT", socket_type="NodeSocketFloat")
-    s.default_value = params["Distal Radius"]
-    s = iface.new_socket("Wall Thickness",  in_out="INPUT", socket_type="NodeSocketFloat")
-    s.default_value = params["Wall Thickness"]
-    s = iface.new_socket("Resolution",      in_out="INPUT", socket_type="NodeSocketInt")
-    s.default_value = params["Resolution"]
+    for name, key in (("Proximal Radius", "proximal_radius_mm"),
+                      ("Distal Radius", "distal_radius_mm"),
+                      ("Wall Thickness", "wall_thickness_mm")):
+        sock = iface.new_socket(name, in_out="INPUT", socket_type="NodeSocketFloat")
+        sock.default_value = d[key]
+    gi = g.nodes.new("NodeGroupInput")
+    go = g.nodes.new("NodeGroupOutput")
+    proximal, distal, wall = (gi.outputs["Proximal Radius"], gi.outputs["Distal Radius"],
+                              gi.outputs["Wall Thickness"])
 
-    gi = _n(nodes, "NodeGroupInput",  x=-900, y=0)
-    go = _n(nodes, "NodeGroupOutput", x=1150, y=0)
+    z_cav, z_top = d["cavity_bottom_mm"], d["top_mm"]
+    z_tube = TUBE_BOTTOM * s
 
-    length = gi.outputs["Stump Length"]
-    proximal = gi.outputs["Proximal Radius"]
-    distal = gi.outputs["Distal Radius"]
-    wall = gi.outputs["Wall Thickness"]
+    # ── Pie: pie + talón + puntera ────────────────────────────────────────────
+    foot_parts = [g.ellipsoid(*_scaled(p, s)) for p in (FOOT, HEEL, TOE_BOX)]
 
-    # ── Cono exterior ─────────────────────────────────────────────────────────
-    outer = _cone(nodes, links, gi, distal, proximal, x=-200, y=300)
-
-    # ── Cono interior ─────────────────────────────────────────────────────────
-    # Al subirlo Wall Thickness, el radio tiene que crecer lo que crece el cono
-    # en esa altura (k = pendiente * Wall Thickness) para que la pared quede pareja.
-    r_range = _math(nodes, links, "SUBTRACT", proximal, distal, x=-700, y=-300)
-    slope = _math(nodes, links, "DIVIDE", r_range, length, x=-550, y=-300)
-    k = _math(nodes, links, "MULTIPLY", slope, wall, x=-400, y=-300)
-    k_minus_wall = _math(nodes, links, "SUBTRACT", k, wall, x=-250, y=-300)
-    inner_bottom = _math(nodes, links, "ADD", distal, k_minus_wall, x=-100, y=-200)
-    inner_top = _math(nodes, links, "ADD", proximal, k_minus_wall, x=-100, y=-400)
-    inner = _cone(nodes, links, gi, inner_bottom, inner_top, x=100, y=-300)
-    inner = _translate_z(nodes, links, inner, wall, x=300, y=-300)
-
-    # ── Exterior − interior ───────────────────────────────────────────────────
-    boolean = _n(nodes, "GeometryNodeMeshBoolean", x=500, y=0)
-    boolean.operation = "DIFFERENCE"
-    boolean.solver = "EXACT"
-    links.new(outer, boolean.inputs["Mesh 1"])
-    links.new(inner, boolean.inputs["Mesh 2"])
-
-    # ── Apoyar la base en z=0 ─────────────────────────────────────────────────
-    # Según la versión de Blender el primitivo Cone viene centrado o apoyado en
-    # z=0: alineamos por el bounding box para no depender de eso.
-    bbox = _n(nodes, "GeometryNodeBoundBox", x=500, y=-300)
-    links.new(boolean.outputs["Mesh"], bbox.inputs["Geometry"])
-
-    min_xyz = _n(nodes, "ShaderNodeSeparateXYZ", x=650, y=-300)
-    links.new(bbox.outputs["Min"], min_xyz.inputs[0])
-
-    neg_min_z = _n(nodes, "ShaderNodeMath", x=800, y=-300)
-    neg_min_z.operation = "MULTIPLY"
-    neg_min_z.inputs[1].default_value = -1.0
-    links.new(min_xyz.outputs["Z"], neg_min_z.inputs[0])
-
-    grounded = _translate_z(
-        nodes, links, boolean.outputs["Mesh"], neg_min_z.outputs[0], x=950, y=0
+    # ── Tubo del socket (pared = radio del muñón + espesor) ───────────────────
+    outer_bottom = g.math("ADD", distal, wall)
+    outer_top = g.math("ADD", proximal, wall)
+    # Las piezas se superponen (nunca caras en el mismo plano): si no, el
+    # booleano deja caras degeneradas y la malla no queda cerrada.
+    tube = g.boolean(
+        "UNION",
+        g.frustum(z_tube, z_cav + 3.0, outer_bottom, outer_bottom),
+        g.frustum(z_cav, z_top, outer_bottom, outer_top),
     )
-    links.new(grounded, go.inputs["Geometry"])
+    # Cavidad: medidas exactas del muñón. Sigue el mismo cono 20 mm más arriba
+    # del borde para abrir la boca sin caras coplanares.
+    extra = 20.0
+    slope = (d["proximal_radius_mm"] - d["distal_radius_mm"]) / max(d["stump_length_mm"], 1.0)
+    cavity = g.frustum(z_cav, z_top + extra, distal,
+                       g.math("ADD", proximal, slope * extra))
+    vents = _vents(g, d)
+
+    if d["hind"]:
+        tilt = math.radians(HIND_TILT_DEG)
+        pivot = HIND_PIVOT_Z * s
+        tube, cavity, vents = (
+            g.transform(g.transform(x, translation=(0, 0, -pivot)),
+                        rotation=(tilt, 0, 0), translation=(0, 0, pivot))
+            for x in (tube, cavity, vents)
+        )
+
+    body = g.boolean("UNION", *foot_parts, tube)
+
+    # ── Surcos de dedos: solo la cáscara (pie achicado 1.5 mm no se toca) ─────
+    shrunk = g.boolean("UNION", *(g.ellipsoid(*_scaled(p, s), shrink=TOE_GROOVE_DEPTH)
+                                  for p in (FOOT, HEEL, TOE_BOX)))
+    grooves = g.join(*(
+        g.box((2.6 * s, 50.0 * s, 60.0 * s),
+              translation=(58.0 * s * math.sin(th), 4.0 * s + 58.0 * s * math.cos(th), 42.0 * s),
+              rotation=(0, 0, -th))
+        for th in TOE_GROOVE_ANGLES
+    ))
+    groove_cutter = g.boolean("DIFFERENCE", grooves, shrunk)
+
+    # ── Dibujo de suela: ranuras transversales, lejos del borde ──────────────
+    inner5 = g.boolean("UNION", *(g.ellipsoid(*_scaled(p, s), shrink=5.0 * s)
+                                  for p in (FOOT, HEEL, TOE_BOX)))
+    y_min, y_max = -36.0 * s, 87.0 * s
+    k0 = math.ceil((y_min / s - 2.5) / TREAD_PITCH)
+    k1 = math.floor((y_max / s - 2.5) / TREAD_PITCH)
+    treads = g.join(*(
+        g.box((90.0 * s, TREAD_WIDTH * s, 2 * TREAD_DEPTH * s),
+              translation=(0, (2.5 + TREAD_PITCH * k) * s, 0))
+        for k in range(k0, k1 + 1)
+    ))
+    tread_cutter = g.boolean("INTERSECT", treads, inner5)
+
+    # ── Suela plana en z=0 ───────────────────────────────────────────────────
+    below = g.box((400.0, 400.0, 100.0), translation=(0, 0, -50.0))
+
+    boot = g.boolean("DIFFERENCE", body, below, cavity, groove_cutter, tread_cutter, vents)
+    g.links.new(boot, go.inputs["Geometry"])
+
+
+def _vents(g: _Graph, d: dict):
+    """Ventanas de a pares en la pared del socket, ubicadas relativas a la cavidad."""
+    z_cav, stump = d["cavity_bottom_mm"], d["stump_length_mm"]
+    r_mid = (d["distal_radius_mm"] + d["proximal_radius_mm"]) / 2 + d["wall_thickness_mm"] / 2
+    depth = d["wall_thickness_mm"] * 4 + 4.0      # atraviesa la pared, no llega al otro lado
+    cutters = []
+    for angle_deg, frac, rel_len in VENTS:
+        length = max(rel_len * stump, 8.0)
+        zc = z_cav + frac * stump
+        # que no se salga de la cavidad (deja 6 mm de borde arriba y abajo)
+        zc = min(max(zc, z_cav + 6 + length / 2), z_cav + stump - 6 - length / 2)
+        if length > stump - 12:
+            continue                                # muñón muy corto: sin esta ventana
+        a = math.radians(angle_deg)
+        for off in (-VENT_PAIR_OFFSET, VENT_PAIR_OFFSET):
+            x = r_mid * math.cos(a) - off * math.sin(a)
+            y = ELL_Y * r_mid * math.sin(a) + off * math.cos(a)
+            cutters.append(g.box((depth, VENT_WIDTH, length), translation=(x, y, zc),
+                                 rotation=(0, 0, a)))
+    if not cutters:
+        return g.box((0.01, 0.01, 0.01), translation=(0, 0, -1000))   # nada que cortar
+    return g.join(*cutters)
