@@ -23,7 +23,7 @@ Abrí http://localhost:8000/docs para probar los endpoints.
 |---|---|
 | `SUPABASE_URL` | URL del proyecto de Supabase |
 | `SUPABASE_SECRET_KEY` | Service key (escribe en tablas y storage) |
-| `BLENDER_ENABLED` | `true` para usar el generador de Blender. Por defecto `false` |
+| `BLENDER_ENABLED` | Opcional. Blender se usa solo si `bpy` está instalado; `false` lo apaga a mano |
 
 Sin las variables de Supabase el server levanta igual: el error aparece recién cuando un endpoint necesita Supabase.
 
@@ -43,7 +43,7 @@ POST /prosthesis/requests/{request_id}/generate → genera el STL, lo sube y dev
 1. **Medidas → parámetros** ([socket_parameters.py](app/services/socket_parameters.py)). Las circunferencias se convierten en radios y el peso define el espesor de pared y el conector. Es la única fuente de verdad: los generadores no recalculan nada.
 2. **Validación física** (`selector.validate_geometry`). Si el socket no tiene sentido (por ejemplo, la pared es más gruesa que el radio), responde `422`.
 3. **Generación** ([selector.py](app/services/generators/selector.py)). El cliente no elige el generador, lo decide el back:
-   - `blender-gn-v1`: socket paramétrico con Geometry Nodes. Solo se usa si `BLENDER_ENABLED=true` y `bpy` está instalado.
+   - `blender-gn-v1`: socket paramétrico con Geometry Nodes. Se usa automáticamente si `bpy` está instalado (salvo `BLENDER_ENABLED=false`).
    - `trimesh-scale-v2` (fallback): escala el modelo base según la boca del socket, sin deformar el pie. Si la pata es izquierda, lo espeja.
    - La respuesta incluye `generator_used` y `fallback_reason` para saber qué camino tomó.
 4. **Storage.** El STL se sube a `generated-models`, se registra en la tabla `generated_models` y se devuelve una signed URL que dura 7 días.
@@ -103,7 +103,7 @@ Si cambiás las medidas del socket en el script, actualizá `BASE_SOCKET_DIAMETE
 
 ```bash
 pip install -r requirements.txt bpy
-BLENDER_ENABLED=true uvicorn app.main:app --reload
+uvicorn app.main:app --reload       # con bpy instalado, usa Blender solo
 ```
 
 Funciona si `generate` devuelve `"generator_used": "blender-gn-v1"` y `"fallback_reason": null`.

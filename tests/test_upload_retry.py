@@ -54,3 +54,12 @@ def test_cliente_usa_timeout_largo(monkeypatch):
                         lambda url, key, options: capturado.setdefault("o", options))
     supabase_client.supabase._get()
     assert capturado["o"].storage_client_timeout == supabase_client.STORAGE_TIMEOUT_SECONDS == 120
+
+
+def test_blender_prendido_por_defecto(monkeypatch):
+    from app.services.generators import selector
+
+    monkeypatch.delenv("BLENDER_ENABLED", raising=False)
+    assert selector._blender_enabled() is True
+    monkeypatch.setenv("BLENDER_ENABLED", "false")
+    assert selector._blender_enabled() is False
