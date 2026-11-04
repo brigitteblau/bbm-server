@@ -43,7 +43,7 @@ POST /prosthesis/requests/{request_id}/generate → genera el STL, lo sube y dev
 1. **Medidas → parámetros** ([socket_parameters.py](app/services/socket_parameters.py)). Las circunferencias se convierten en radios y el peso define el espesor de pared y el conector. Es la única fuente de verdad: los generadores no recalculan nada.
 2. **Validación física** (`selector.validate_geometry`). Si el socket no tiene sentido (por ejemplo, la pared es más gruesa que el radio), responde `422`.
 3. **Generación** ([selector.py](app/services/generators/selector.py)). El cliente no elige el generador, lo decide el back:
-   - `blender-gn-v1`: socket paramétrico con Geometry Nodes. Se usa automáticamente si `bpy` está instalado (salvo `BLENDER_ENABLED=false`).
+   - `blender-gn-v2-bota`: la bota completa generada con Geometry Nodes a la medida del perro. Se usa automáticamente si `bpy` está instalado (salvo `BLENDER_ENABLED=false`).
    - `trimesh-scale-v2` (fallback): escala el modelo base según la boca del socket, sin deformar el pie. Si la pata es izquierda, lo espeja.
    - La respuesta incluye `generator_used` y `fallback_reason` para saber qué camino tomó.
 4. **Storage.** El STL se sube a `generated-models`, se registra en la tabla `generated_models` y se devuelve una signed URL que dura 7 días.
@@ -97,7 +97,7 @@ python -m scripts.upload_base_models out/            # sube los dos, con backup 
 
 Si cambiás las medidas del socket en el script, actualizá `BASE_SOCKET_DIAMETER_MM` y `BASE_SOCKET_DEPTH_MM` en [trimesh_scaler.py](app/services/generators/trimesh_scaler.py).
 
-## Generador Blender (en progreso)
+## Generador Blender: la bota en Geometry Nodes
 
 `bpy` 5.x anda con Python 3.13 (probado con 5.2.3). Pesa bastante, así que no está en `requirements.txt`:
 
@@ -106,9 +106,26 @@ pip install -r requirements.txt bpy
 uvicorn app.main:app --reload       # con bpy instalado, usa Blender solo
 ```
 
-Funciona si `generate` devuelve `"generator_used": "blender-gn-v1"` y `"fallback_reason": null`.
+Funciona si `generate` devuelve `"generator_used": "blender-gn-v2-bota"` y `"fallback_reason": null`.
 
-El socket es un vaso cónico: cono exterior menos cono interior (Mesh Boolean exacto). Sale cerrado (watertight), con la base en z=0, el fondo y la pared del espesor que da el peso y la boca abierta arriba. Por ahora no incluye el conector. Cada generación tarda unos 0.1 s y el proceso llega a unos 255 MB de RAM con Blender cargado.
+`blender_gn.py` arma **desde cero la misma bota** que `scripts/make_base_models.py`, pero como un grafo de Geometry Nodes, con primitivas y booleanos, y con las medidas reales de cada perro:
+
+| Parte | Cómo se arma | Qué medida usa |
+|---|---|---|
+| Pie, talón y puntera | 3 elipsoides (UV Sphere + Transform) unidos | escala del pie = radio proximal / 28.5 mm (acotada a 0.5–2) |
+| Socket | tubo de sección elíptica: Cone, Mesh Boolean | radios proximal y distal **+ espesor de pared** (según el peso) |
+| Cavidad del muñón | cono restado al tubo | radios y **largo del muñón exactos** |
+| Ventanas de ventilación | 3 pares de ranuras restadas a la pared | ubicadas relativas al largo del muñón; si el muñón es muy corto, se omiten |
+| Surcos de dedos | 3 ranuras que solo cortan la cáscara (1.5 mm) | escalan con el pie |
+| Dibujo de suela | ranuras transversales de 1.3 mm, lejos del borde | escalan con el pie |
+| Trasera | tubo, cavidad y ventanas inclinados 11° hacia atrás | `limb_position` |
+| Izquierda | espejado en X | `limb_side` |
+
+- Los booleanos usan el solver `MANIFOLD` (Blender 4.5+): cada bota tarda ~1 s, sale cerrada (watertight), apoyada en z=0, y pesa ~0.4 MB (el modelo base escalado pesa ~6 MB).
+- Las piezas se superponen a propósito, sin caras en el mismo plano, para que el booleano no deje caras degeneradas. Al exportar se descartan astillas sueltas, igual que en `make_base_models.py`.
+- Las medidas del muñón (radios y pared) quedan como **inputs del grupo de nodos**, así se pueden tocar a mano desde el panel del modifier en Blender.
+- Diferencias con el script SDF: las uniones son en ángulo (el SDF las suaviza) y no tiene la línea de partición de la valva superior ni el balancín de la punta.
+- `tests/test_blender_bota.py` prueba el diseño siempre y genera botas reales cuando `bpy` está instalado.
 
 ## Estructura
 
