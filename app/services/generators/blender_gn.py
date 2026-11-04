@@ -144,7 +144,12 @@ def _largest_body(stl_bytes: bytes) -> bytes:
     import trimesh
 
     mesh = trimesh.load_mesh(BytesIO(stl_bytes), file_type="stl")
-    parts = mesh.split(only_watertight=False)
+    try:
+        parts = mesh.split(only_watertight=False)
+    except ImportError:
+        # split necesita networkx o scipy ("no graph engines available"):
+        # sin eso devolvemos la malla tal cual, que igual es válida.
+        return stl_bytes
     if len(parts) > 1:
         mesh = max(parts, key=lambda m: len(m.faces))
     out = BytesIO()
